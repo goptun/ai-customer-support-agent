@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     clarifications_before_escalation: int = 2
     recent_order_days: int = 30
     recent_orders_limit: int = 5
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    knowledge_top_k: int = 3
+    # Cosine similarity below which a chunk doesn't answer the question (tuned on the seed).
+    knowledge_min_score: float = 0.45
 
     @property
     def checkpointer_url(self) -> str:

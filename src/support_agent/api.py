@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from support_agent.config import Settings, get_settings
 from support_agent.conversations import ConversationNotFound, Conversations
 from support_agent.db import session_factory
 from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
+from support_agent.knowledge import Embedder, FastEmbedEmbedder, KnowledgeBase
 from support_agent.llm import LLM, AnthropicLLM
 from support_agent.logistics import LogisticsClient
 from support_agent.models import Customer, MessageRole
@@ -68,10 +70,11 @@ def create_app(
     settings: Settings | None = None,
     *,
     llm: LLM | None = None,
+    embedder: Embedder | None = None,
     logistics_transport: httpx.AsyncBaseTransport | None = None,
     today: Callable[[], date] = _today,
 ) -> FastAPI:
-    """Build the app. Tests inject a fake LLM, a logistics transport and a fixed clock."""
+    """Build the app. Tests inject a fake LLM and embedder, a logistics transport and a clock."""
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -103,6 +106,14 @@ def create_app(
                     logistics_http, timeout_seconds=settings.logistics_timeout_seconds
                 ),
                 tickets=Tickets(app.state.sessions),
+                knowledge_base=KnowledgeBase(
+                    app.state.sessions,
+                    embedder
+                    if embedder is not None
+                    else await asyncio.to_thread(FastEmbedEmbedder, settings.embedding_model),
+                    top_k=settings.knowledge_top_k,
+                    min_score=settings.knowledge_min_score,
+                ),
                 today=today,
             )
             app.state.graph = build_graph(

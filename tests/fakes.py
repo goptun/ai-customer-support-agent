@@ -1,5 +1,9 @@
+import math
+import re
+import zlib
 from collections.abc import Sequence
 
+from support_agent.knowledge import EMBEDDING_DIM
 from support_agent.llm import Classification, ConversationMessage, Entities, Intent
 
 
@@ -7,6 +11,10 @@ def order_status(order_id: str | None = None) -> Classification:
     return Classification(
         intents=[Intent.ORDER_STATUS], confidence=0.95, entities=Entities(order_id=order_id)
     )
+
+
+def faq() -> Classification:
+    return Classification(intents=[Intent.FAQ], confidence=0.95, entities=Entities())
 
 
 class ScriptedLLM:
@@ -37,3 +45,29 @@ class ScriptedLLM:
 
 def _last_customer_message(history: Sequence[ConversationMessage]) -> str:
     return next(m.content for m in reversed(history) if m.role == "user")
+
+
+class LexicalEmbedder:
+    """Deterministic stand-in for the embedding model: hashed bag of word stems.
+
+    Texts sharing words land close together, unrelated ones near zero, which is enough to
+    test retrieval without downloading a model. Retrieval quality is measured in eval.
+    """
+
+    def __init__(self) -> None:
+        self.passages_embedded = 0
+
+    def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
+        self.passages_embedded += len(texts)
+        return [_bag_of_stems(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return _bag_of_stems(text)
+
+
+def _bag_of_stems(text: str) -> list[float]:
+    vector = [0.0] * EMBEDDING_DIM
+    for word in re.findall(r"\w{4,}", text.casefold()):
+        vector[zlib.crc32(word[:5].encode()) % EMBEDDING_DIM] += 1.0
+    norm = math.sqrt(sum(v * v for v in vector)) or 1.0
+    return [v / norm for v in vector]

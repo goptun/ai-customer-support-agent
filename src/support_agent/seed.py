@@ -1,6 +1,7 @@
-"""Idempotent seed of fictional Customers, Orders and Shipments.
+"""Idempotent seed of fictional Customers, Orders and Shipments, and the Knowledge Base index.
 
-Run with `python -m support_agent.seed`. Re-running never duplicates or overwrites rows.
+Run with `python -m support_agent.seed`. Re-running never duplicates or overwrites rows, and
+re-embeds only policy documents that changed.
 """
 
 import asyncio
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from support_agent.config import get_settings
 from support_agent.db import session_factory
+from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
 from support_agent.models import Customer, Order, OrderStatus, Shipment
 
 # Dates are relative to a fixed anchor so the seed is deterministic across runs.
@@ -204,9 +206,13 @@ async def seed(sessions: async_sessionmaker[AsyncSession]) -> None:
 
 
 async def main() -> None:
-    engine = create_async_engine(get_settings().database_url)
+    settings = get_settings()
+    engine = create_async_engine(settings.database_url)
     try:
-        await seed(session_factory(engine))
+        sessions = session_factory(engine)
+        await seed(sessions)
+        embedder = await asyncio.to_thread(FastEmbedEmbedder, settings.embedding_model)
+        await index_policies(sessions, embedder, load_policies())
     finally:
         await engine.dispose()
 

@@ -1,7 +1,8 @@
 """Agent tools.
 
-Every tool validates its (LLM-produced) arguments with Pydantic, takes the Customer from the
-authenticated run context, checks Order ownership and returns a typed result or a ToolError.
+Every tool validates its (LLM-produced) arguments with Pydantic and returns a typed result or
+a ToolError. Tools touching Orders take the Customer from the authenticated run context and
+check Order ownership.
 """
 
 import asyncio
@@ -15,6 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from support_agent.knowledge import KnowledgeBase, PolicyExcerpt
 from support_agent.logistics import (
     CarrierUnavailable,
     LogisticsClient,
@@ -63,11 +65,17 @@ class OrderStatusResult(BaseModel):
     shipment: ShipmentInfo | None  # None: the Order has not been Dispatched
 
 
+class KnowledgeBaseResult(BaseModel):
+    kind: Literal["knowledge_base"] = "knowledge_base"
+    chunks: list[PolicyExcerpt]  # best first; empty when the Knowledge Base doesn't cover it
+
+
 @dataclass(frozen=True)
 class ToolDeps:
     orders: Orders
     logistics: LogisticsClient
     tickets: Tickets
+    knowledge_base: KnowledgeBase
     today: Callable[[], date]
 
 
@@ -102,6 +110,19 @@ class CreateSupportTicketArgs(BaseModel):
     @classmethod
     def _normalize(cls, value: str | None) -> str | None:
         return None if value is None else _normalize_order_id(value)
+
+
+class SearchKnowledgeBaseArgs(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    query: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("query")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("empty query")
+        return value.strip()
 
 
 def days_late(promised: date | None, delivered_at: datetime | None, today: date) -> int | None:
@@ -185,6 +206,16 @@ async def create_support_ticket(
         actor_type=ActorType.CUSTOMER if requested else ActorType.SYSTEM,
         actor_id=customer_id if requested else None,
     )
+
+
+async def search_knowledge_base(
+    knowledge_base: KnowledgeBase, args: Mapping[str, object]
+) -> KnowledgeBaseResult | ToolError:
+    try:
+        query = SearchKnowledgeBaseArgs.model_validate(args).query
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    return KnowledgeBaseResult(chunks=await knowledge_base.search(query))
 
 
 @dataclass(frozen=True)

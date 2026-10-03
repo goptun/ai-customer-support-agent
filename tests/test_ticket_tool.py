@@ -9,6 +9,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from support_agent.db import session_factory
+from support_agent.knowledge import KnowledgeBase
 from support_agent.logistics import LogisticsClient
 from support_agent.models import AuditLogEntry, Conversation, Ticket
 from support_agent.orders import Orders
@@ -20,6 +21,9 @@ from support_agent.tools import (
     ToolError,
     create_support_ticket,
 )
+
+from .conftest import KNOWLEDGE_MIN_SCORE
+from .fakes import LexicalEmbedder
 
 ANA = "cus_ana"
 
@@ -35,6 +39,9 @@ def deps(engine: AsyncEngine) -> ToolDeps:
             httpx.AsyncClient(transport=httpx.MockTransport(no_carrier)), timeout_seconds=0.5
         ),
         tickets=Tickets(sessions),
+        knowledge_base=KnowledgeBase(
+            sessions, LexicalEmbedder(), top_k=3, min_score=KNOWLEDGE_MIN_SCORE
+        ),
         today=ANCHOR.date,
     )
 

@@ -12,7 +12,13 @@ COPY migrations ./migrations
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-RUN useradd --system --uid 1000 app
+# Bake the embedding model into the image so the app never downloads it at runtime.
+ENV FASTEMBED_CACHE_PATH=/app/models
+RUN python -c "from support_agent.config import Settings; \
+from support_agent.knowledge import FastEmbedEmbedder; \
+FastEmbedEmbedder(Settings.model_fields['embedding_model'].default)"
+
+RUN useradd --system --uid 1000 app && chown -R app /app/models
 USER app
 
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh

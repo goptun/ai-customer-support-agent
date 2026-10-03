@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from support_agent.api import create_app
 from support_agent.config import Settings
 from support_agent.db import session_factory
+from support_agent.knowledge import index_policies, load_policies
 from support_agent.logistics_mock import create_app as create_logistics_mock
 from support_agent.seed import ANCHOR, seed
 
-from .fakes import ScriptedLLM
+from .fakes import LexicalEmbedder, ScriptedLLM
 
 TEST_JWT_SECRET = "test-secret-with-enough-length-for-hs256"
+KNOWLEDGE_MIN_SCORE = 0.3  # for LexicalEmbedder; the real model's threshold is tuned in eval
 
 
 @pytest.fixture(scope="session")
@@ -49,6 +51,7 @@ def settings(infra_urls: tuple[str, str]) -> Settings:
         logistics_url="http://logistics.test",
         logistics_timeout_seconds=0.2,
         tool_retry_backoff_seconds=0,
+        knowledge_min_score=KNOWLEDGE_MIN_SCORE,
     )
 
 
@@ -62,7 +65,9 @@ def migrated(settings: Settings) -> None:
 @pytest.fixture(scope="session")
 async def engine(settings: Settings, migrated: None) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(settings.database_url)
-    await seed(session_factory(engine))
+    sessions = session_factory(engine)
+    await seed(sessions)
+    await index_policies(sessions, LexicalEmbedder(), load_policies())
     yield engine
     await engine.dispose()
 
@@ -79,6 +84,7 @@ async def client(
     app = create_app(
         settings,
         llm=llm,
+        embedder=LexicalEmbedder(),
         logistics_transport=ASGITransport(app=create_logistics_mock(timeout_delay_seconds=5)),
         today=ANCHOR.date,
     )

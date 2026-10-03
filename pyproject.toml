@@ -10,9 +10,11 @@ dependencies = [
     "alembic>=1.20.0",
     "anthropic>=1.11.0",
     "fastapi>=0.142.2",
+    "fastembed>=0.8.1",
     "httpx>=0.28.1",
     "langgraph>=1.2.12",
     "langgraph-checkpoint-postgres>=3.1.2",
+    "pgvector>=0.5.0",
     "psycopg[binary,pool]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "pyjwt>=2.15.1",
@@ -51,7 +53,7 @@ mypy_path = "src"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["testcontainers.*", "asgi_lifespan.*"]
+module = ["testcontainers.*", "asgi_lifespan.*", "pgvector.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

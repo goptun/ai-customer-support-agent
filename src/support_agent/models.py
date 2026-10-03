@@ -3,9 +3,25 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Date, DateTime, Enum, ForeignKey, String, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Output size of the embedding model; changing the model needs a migration.
+EMBEDDING_DIM = 384
 
 
 class Base(DeclarativeBase):
@@ -126,3 +142,19 @@ class AuditLogEntry(Base):
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONB)
     result: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class KnowledgeChunk(Base):
+    """One section of a Knowledge Base policy document, with its embedding."""
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (UniqueConstraint("document", "position"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    document: Mapped[str] = mapped_column(String(100), index=True)  # source file stem
+    position: Mapped[int] = mapped_column(Integer)  # section order within the document
+    title: Mapped[str] = mapped_column(String(200))
+    section: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))  # sha256 of what was embedded
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
