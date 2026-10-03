@@ -1,4 +1,7 @@
-"""The agent graph: classify_intent → resolve_context → act → respond, plus escalate."""
+"""The agent graph: classify_intent → resolve_context → act → respond, plus escalate.
+
+Policy questions (`faq`) go classify_intent → consult_knowledge_base → respond instead.
+"""
 
 import uuid
 from dataclasses import dataclass, field
@@ -20,9 +23,12 @@ from support_agent.replies import (
     ASK_ORDER_ID,
     CAPABILITIES,
     CLARIFICATION,
+    KNOWLEDGE_NOT_FOUND,
     TICKET_FAILED,
+    cite_sources,
     is_grounded,
     render_error,
+    render_knowledge,
     render_order_status,
     render_queued,
     render_recent_orders,
@@ -31,6 +37,7 @@ from support_agent.replies import (
 )
 from support_agent.tickets import TicketResult
 from support_agent.tools import (
+    KnowledgeBaseResult,
     OrderStatusResult,
     RetryPolicy,
     ToolDeps,
@@ -39,12 +46,14 @@ from support_agent.tools import (
     create_support_ticket,
     get_order_status,
     is_failure,
+    search_knowledge_base,
 )
 
 ToolResult = OrderStatusResult | ToolError
 _tool_result = TypeAdapter[ToolResult](ToolResult)
 _order_summaries = TypeAdapter(list[OrderSummary])
 _ticket_result = TypeAdapter[TicketResult | ToolError](TicketResult | ToolError)
+_knowledge_result = TypeAdapter[KnowledgeBaseResult | ToolError](KnowledgeBaseResult | ToolError)
 
 PRIORITY = {
     TicketReason.CUSTOMER_REQUESTED: TicketPriority.NORMAL,
@@ -58,6 +67,7 @@ SUMMARY_MESSAGE_CHARS = 300  # keeps the summary within the tool's length limit
 class QueuedIntent(TypedDict):
     intent: str
     order_id: str | None  # as the Customer wrote it alongside the Intent
+    message: str  # the Customer message that raised it
 
 
 class ConversationState(TypedDict, total=False):
@@ -65,6 +75,7 @@ class ConversationState(TypedDict, total=False):
     intent: str
     # Per-turn fields, reset by classify_intent. Stored as JSON so checkpoints stay plain.
     order_id: str | None
+    query: str  # the Customer message the handled Intent comes from
     tool_result: dict[str, Any] | None
     escalation: str | None  # TicketReason
     ticket: dict[str, Any] | None
@@ -143,10 +154,12 @@ def build_graph(
             Intent.OTHER
         ]
         order_id = classification.entities.order_id
+        message = state["messages"][-1].text
         queued = list(state.get("queued_intents") or [])
         update: ConversationState = {
             "intent": raised[0].value,
             "order_id": order_id,
+            "query": message,
             "tool_result": None,
             "ticket": None,
             "escalation": None,
@@ -175,12 +188,15 @@ def build_graph(
             # Nothing new asked: carry on with what the Customer raised earlier.
             resumed = queued.pop(0)
             update["intent"], update["order_id"] = resumed["intent"], resumed["order_id"]
+            update["query"] = resumed["message"]
         else:
             handled = raised[0].value
             queued = [item for item in queued if item["intent"] != handled]
             for intent in raised[1:]:
                 if intent.value not in {handled, *(item["intent"] for item in queued)}:
-                    queued.append(QueuedIntent(intent=intent.value, order_id=order_id))
+                    queued.append(
+                        QueuedIntent(intent=intent.value, order_id=order_id, message=message)
+                    )
         update["queued_intents"] = queued
         return update
 
@@ -220,6 +236,12 @@ def build_graph(
                 update["escalation"] = TicketReason.TOOL_FAILURE.value
         return update
 
+    async def consult_knowledge_base(state: ConversationState) -> ConversationState:
+        result = await search_knowledge_base(
+            deps.tools.knowledge_base, {"query": state.get("query")}
+        )
+        return {"tool_result": result.model_dump(mode="json")}
+
     async def escalate(state: ConversationState, runtime: Runtime[RunContext]) -> ConversationState:
         escalation = state.get("escalation")
         assert escalation is not None  # routed here only when set
@@ -254,6 +276,8 @@ def build_graph(
         return f"{answer}\n\n{render_queued([Intent(item['intent']) for item in queued])}"
 
     async def _answer(state: ConversationState) -> str:
+        if state["intent"] == Intent.FAQ:
+            return await _knowledge_reply(state)
         if state["intent"] != Intent.ORDER_STATUS:
             return CAPABILITIES
         if state.get("tool_result") is None:
@@ -275,12 +299,29 @@ def build_graph(
         reply = await deps.llm.respond(_history(state, deps.history_window), facts.text)
         return reply if reply.strip() and is_grounded(reply, facts) else facts.text
 
+    async def _knowledge_reply(state: ConversationState) -> str:
+        result = _knowledge_result.validate_python(state["tool_result"])
+        if not isinstance(result, KnowledgeBaseResult) or not result.chunks:
+            return KNOWLEDGE_NOT_FOUND
+        facts = render_knowledge(result)
+        # The question goes along: a resumed Intent's question isn't the last message.
+        reply = await deps.llm.respond(
+            _history(state, deps.history_window),
+            f"Pergunta do Customer: {state['query']}\n\n{facts.text}",
+        )
+        grounded = reply if reply.strip() and is_grounded(reply, facts) else facts.text
+        return cite_sources(grounded, result)
+
     def after_classify(
         state: ConversationState,
-    ) -> Literal["escalate", "resolve_context", "respond"]:
+    ) -> Literal["escalate", "resolve_context", "consult_knowledge_base", "respond"]:
         if state.get("escalation"):
             return "escalate"
-        if state.get("needs_clarification") or state["intent"] != Intent.ORDER_STATUS:
+        if state.get("needs_clarification"):
+            return "respond"
+        if state["intent"] == Intent.FAQ:
+            return "consult_knowledge_base"
+        if state["intent"] != Intent.ORDER_STATUS:
             return "respond"
         return "resolve_context"
 
@@ -294,12 +335,14 @@ def build_graph(
     builder.add_node("classify_intent", classify_intent)
     builder.add_node("resolve_context", resolve_context)
     builder.add_node("act", act)
+    builder.add_node("consult_knowledge_base", consult_knowledge_base)
     builder.add_node("escalate", escalate)
     builder.add_node("respond", respond)
     builder.add_edge(START, "classify_intent")
     builder.add_conditional_edges("classify_intent", after_classify)
     builder.add_conditional_edges("resolve_context", after_resolve)
     builder.add_conditional_edges("act", after_act)
+    builder.add_edge("consult_knowledge_base", "respond")
     builder.add_edge("escalate", "respond")
     builder.add_edge("respond", END)
     return builder.compile(checkpointer=checkpointer)

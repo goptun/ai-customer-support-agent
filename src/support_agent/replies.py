@@ -1,8 +1,8 @@
 """Deterministic pt-BR wording of tool outputs, and the grounding check on LLM replies.
 
 The facts rendered here are the only source the responder may draw on. A reply that
-mentions a date, amount or day count absent from the facts, or a status the Order is not
-in, is discarded in favour of the facts themselves.
+mentions a date, amount or day count absent from the facts, or a status the facts don't
+state, is discarded in favour of the facts themselves.
 """
 
 import re
@@ -14,7 +14,7 @@ from support_agent.logistics import ShipmentStatus
 from support_agent.models import OrderStatus, TicketReason
 from support_agent.orders import OrderSummary
 from support_agent.tickets import TicketResult
-from support_agent.tools import ErrorCode, OrderStatusResult, ToolError
+from support_agent.tools import ErrorCode, KnowledgeBaseResult, OrderStatusResult, ToolError
 
 ASK_ORDER_ID = (
     "Claro, posso verificar! Qual é o número do pedido? Você encontra no e-mail de "
@@ -22,12 +22,19 @@ ASK_ORDER_ID = (
 )
 CAPABILITIES = (
     "Sou o assistente de atendimento da loja. Por enquanto consigo te ajudar a acompanhar "
-    "seus pedidos: me diga o número do pedido e eu verifico o status e a entrega. Se "
+    "seus pedidos (me diga o número do pedido e eu verifico o status e a entrega) e tirar "
+    "dúvidas sobre as políticas da loja, como prazos de entrega, trocas e reembolsos. Se "
     "preferir, também posso te passar para um atendente."
 )
 CLARIFICATION = (
     "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? "
-    "Por exemplo: saber onde está um pedido."
+    "Por exemplo: saber onde está um pedido ou tirar uma dúvida sobre trocas."
+)
+# Said instead of guessing when the Knowledge Base doesn't cover the question.
+KNOWLEDGE_NOT_FOUND = (
+    "Não encontrei essa informação nas políticas da loja, então prefiro não te dar uma "
+    "resposta incerta. Se quiser, posso abrir um chamado para um atendente te responder: "
+    "é só me pedir."
 )
 
 # How a queued Intent is announced: "Também vi que você quer {label}."
@@ -131,6 +138,23 @@ class Facts:
 
 def render_order_status(result: OrderStatusResult) -> Facts:
     return Facts(text=_order_status_text(result), statuses=_current_statuses(result))
+
+
+def render_knowledge(result: KnowledgeBaseResult) -> Facts:
+    text = "\n\n".join(
+        f"{chunk.title} — {chunk.section}:\n{chunk.content}" for chunk in result.chunks
+    )
+    # A policy may mention any status ("pedido entregue há 30 dias"): all of them are facts.
+    return Facts(text=text, statuses=frozenset(_STATUS_WORDS.findall(text)))
+
+
+def cite_sources(reply: str, result: KnowledgeBaseResult) -> str:
+    """The reply, naming the policies it comes from if it doesn't already."""
+    titles = list(dict.fromkeys(chunk.title for chunk in result.chunks))
+    if any(title.casefold() in reply.casefold() for title in titles):
+        return reply
+    label = "Fonte" if len(titles) == 1 else "Fontes"
+    return f"{reply}\n\n{label}: {'; '.join(titles)}."
 
 
 def _current_statuses(result: OrderStatusResult) -> frozenset[str]:

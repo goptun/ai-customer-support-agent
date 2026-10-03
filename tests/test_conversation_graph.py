@@ -236,3 +236,19 @@ async def test_asking_for_a_human_ends_the_run_of_clarifications(engine: AsyncEn
     assert "não tenho certeza se entendi" in reply.lower()
     [ticket] = await ana.tickets(conversation_id)
     assert ticket.reason == "customer_requested"
+
+
+async def test_a_queued_policy_question_is_answered_from_the_original_question(
+    engine: AsyncEngine,
+) -> None:
+    ana, llm, _ = agent(engine)
+    message = "cadê o 1002? e qual o prazo para trocar um produto?"
+    llm.on(message, intents(Intent.ORDER_STATUS, Intent.FAQ, order_id="1002"))
+    conversation_id = await ana.new_conversation()
+
+    first = await ana.say(conversation_id, message)
+    second = await ana.say(conversation_id, "ok")  # unscripted: `other`
+
+    assert "dúvida sobre as políticas" in first
+    assert "Política de Trocas" in second
+    assert "30 dias corridos" in second

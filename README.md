@@ -9,7 +9,7 @@ cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET and ANTHROPIC_API_KEY
 docker compose up -d --build
 ```
 
-Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`, and `cus_diego` with a single recent Order) and Orders.
+Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`, and `cus_diego` with a single recent Order) and Orders. It also indexes the Knowledge Base: the pt-BR policies in `src/support_agent/policies/` (one Markdown file per policy, one chunk per `##` section), embedded with a local multilingual model baked into the image (fastembed) and stored in pgvector. Only documents that changed are re-embedded.
 
 ```sh
 TOKEN=$(curl -s -X POST localhost:8003/auth/dev-token \
@@ -18,7 +18,7 @@ curl -s -X POST localhost:8003/chat -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -d '{"message":"Meu pedido ainda não chegou"}'
 ```
 
-Send the returned `conversation_id` to continue the same Conversation.
+Send the returned `conversation_id` to continue the same Conversation. Policy questions ("Qual o prazo para trocar um produto?") are answered from the Knowledge Base, naming the policy; when no policy covers the question the agent says so and offers a Ticket.
 
 ### Logistics scenarios
 
@@ -46,4 +46,4 @@ uv run mypy
 uv run pytest
 ```
 
-Tests use Postgres and Redis from `TEST_DATABASE_URL` / `TEST_REDIS_URL` when set (as in CI); otherwise they start throwaway containers via testcontainers (Docker required). Tests never call the real LLM: they use a scripted fake (`tests/fakes.py`) and the logistics mock in-process.
+Tests use Postgres and Redis from `TEST_DATABASE_URL` / `TEST_REDIS_URL` when set (as in CI); otherwise they start throwaway containers via testcontainers (Docker required). Tests never call the real LLM or embedding model: they use a scripted fake LLM and a lexical fake embedder (`tests/fakes.py`) and the logistics mock in-process.
