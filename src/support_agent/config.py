@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     responder_model: str = "claude-sonnet-5-5"
     logistics_url: str = "http://logistics:8080"
     logistics_timeout_seconds: float = 3.0
+    tool_retries: int = 2
+    tool_retry_backoff_seconds: float = 0.5
+    tool_failures_before_escalation: int = 2
 
     @property
     def checkpointer_url(self) -> str:

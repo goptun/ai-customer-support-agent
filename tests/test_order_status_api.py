@@ -3,6 +3,8 @@
 import pytest
 from httpx import AsyncClient
 
+from support_agent.llm import Classification, Entities, Intent
+
 from .fakes import ScriptedLLM, order_status
 from .test_api import chat, token_for
 
@@ -155,3 +157,16 @@ async def test_status_mentioned_out_of_context_is_replaced(
     assert "já foi enviado" not in reply
     assert "2 dias" not in reply
     assert "ainda não foi enviado" in reply
+
+
+async def test_asking_for_a_human_opens_a_ticket(client: AsyncClient, llm: ScriptedLLM) -> None:
+    message = "quero falar com uma pessoa"
+    llm.on(
+        message,
+        Classification(intents=[Intent.OTHER], confidence=0.9, entities=Entities(wants_human=True)),
+    )
+
+    response = await chat(client, await token_for(client, "cus_ana"), message)
+
+    assert "chamado #" in str(response["reply"])
+    assert "atendente" in str(response["reply"])

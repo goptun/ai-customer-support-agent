@@ -4,10 +4,11 @@ Every tool validates its (LLM-produced) arguments with Pydantic, takes the Custo
 authenticated run context, checks Order ownership and returns a typed result or a ToolError.
 """
 
+import asyncio
 import enum
 import re
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
@@ -184,3 +185,28 @@ async def create_support_ticket(
         actor_type=ActorType.CUSTOMER if requested else ActorType.SYSTEM,
         actor_id=customer_id if requested else None,
     )
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    retries: int = 2
+    backoff_seconds: float = 0.5
+
+
+def is_failure(result: BaseModel) -> bool:
+    """A failed call is one an upstream system could not serve; Customer errors don't count."""
+    if isinstance(result, ToolError):
+        return result.code is ErrorCode.UPSTREAM_UNAVAILABLE
+    if isinstance(result, OrderStatusResult) and result.shipment is not None:
+        return result.shipment.tracking_error is ErrorCode.UPSTREAM_UNAVAILABLE
+    return False
+
+
+async def call_with_retry[R: BaseModel](call: Callable[[], Awaitable[R]], policy: RetryPolicy) -> R:
+    """Run a tool call, retrying failed attempts with exponential backoff."""
+    for attempt in range(policy.retries):
+        result = await call()
+        if not is_failure(result):
+            return result
+        await asyncio.sleep(policy.backoff_seconds * 2**attempt)
+    return await call()

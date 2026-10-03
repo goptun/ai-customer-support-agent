@@ -26,7 +26,7 @@ from support_agent.logistics import LogisticsClient
 from support_agent.models import Customer, MessageRole
 from support_agent.orders import Orders
 from support_agent.tickets import Tickets
-from support_agent.tools import ToolDeps
+from support_agent.tools import RetryPolicy, ToolDeps
 
 
 class DevTokenRequest(BaseModel):
@@ -111,6 +111,11 @@ def create_app(
                     llm=llm or _anthropic_llm(settings),
                     tools=tools,
                     history_window=settings.working_state_window,
+                    retry=RetryPolicy(
+                        retries=settings.tool_retries,
+                        backoff_seconds=settings.tool_retry_backoff_seconds,
+                    ),
+                    failures_before_escalation=settings.tool_failures_before_escalation,
                 ),
             )
             yield
@@ -163,7 +168,7 @@ def create_app(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from None
 
         await conversations.record(conversation_id, MessageRole.CUSTOMER, body.message)
-        turn = await run_turn(graph, str(conversation_id), customer.subject, body.message)
+        turn = await run_turn(graph, conversation_id, customer.subject, body.message)
         await conversations.record(conversation_id, MessageRole.AGENT, turn.reply, turn.intent)
 
         return ChatResponse(

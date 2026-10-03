@@ -48,6 +48,7 @@ def settings(infra_urls: tuple[str, str]) -> Settings:
         jwt_secret=TEST_JWT_SECRET,
         logistics_url="http://logistics.test",
         logistics_timeout_seconds=0.2,
+        tool_retry_backoff_seconds=0,
     )
 
 

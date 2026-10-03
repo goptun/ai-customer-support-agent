@@ -1,5 +1,6 @@
-"""The agent graph: classify_intent → resolve_context → act → respond."""
+"""The agent graph: classify_intent → resolve_context → act → respond, plus escalate."""
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, TypedDict
 
@@ -12,17 +13,38 @@ from langgraph.runtime import Runtime
 from pydantic import TypeAdapter
 
 from support_agent.llm import LLM, ConversationMessage, Intent
+from support_agent.models import TicketPriority, TicketReason
 from support_agent.replies import (
     ASK_ORDER_ID,
     CAPABILITIES,
+    TICKET_FAILED,
     is_grounded,
     render_error,
     render_order_status,
+    render_ticket,
 )
-from support_agent.tools import OrderStatusResult, ToolDeps, ToolError, get_order_status
+from support_agent.tickets import TicketResult
+from support_agent.tools import (
+    OrderStatusResult,
+    RetryPolicy,
+    ToolDeps,
+    ToolError,
+    call_with_retry,
+    create_support_ticket,
+    get_order_status,
+    is_failure,
+)
 
 ToolResult = OrderStatusResult | ToolError
 _tool_result = TypeAdapter[ToolResult](ToolResult)
+_ticket_result = TypeAdapter[TicketResult | ToolError](TicketResult | ToolError)
+
+PRIORITY = {
+    TicketReason.CUSTOMER_REQUESTED: TicketPriority.NORMAL,
+    TicketReason.TOOL_FAILURE: TicketPriority.HIGH,
+}
+SUMMARY_MESSAGES = 5
+SUMMARY_MESSAGE_CHARS = 300  # keeps the summary within the tool's length limit
 
 
 class ConversationState(TypedDict, total=False):
@@ -31,6 +53,11 @@ class ConversationState(TypedDict, total=False):
     # Per-turn fields, reset by classify_intent. Stored as JSON so checkpoints stay plain.
     order_id: str | None
     tool_result: dict[str, Any] | None
+    escalation: str | None  # TicketReason
+    ticket: dict[str, Any] | None
+    # Carried across turns.
+    focused_order_id: str | None  # last Order whose ownership a tool verified
+    tool_failures: dict[str, int]  # failed calls per tool in this Conversation
 
 
 @dataclass(frozen=True)
@@ -38,6 +65,7 @@ class RunContext:
     """Per-run context from the authenticated request; never produced by the LLM."""
 
     customer_id: str
+    conversation_id: uuid.UUID
 
 
 @dataclass(frozen=True)
@@ -45,6 +73,8 @@ class AgentDeps:
     llm: LLM
     tools: ToolDeps
     history_window: int = 20
+    retry: RetryPolicy = field(default_factory=RetryPolicy)
+    failures_before_escalation: int = 2
 
 
 @dataclass(frozen=True)
@@ -63,6 +93,24 @@ def _history(state: ConversationState, window: int) -> list[ConversationMessage]
     ]
 
 
+def _ticket_summary(state: ConversationState, reason: TicketReason, tool: str | None) -> str:
+    why = (
+        "o Customer pediu atendimento humano"
+        if reason is TicketReason.CUSTOMER_REQUESTED
+        else f"falhas repetidas na ferramenta {tool}"
+    )
+    said = [m.text for m in state["messages"] if isinstance(m, HumanMessage)]
+    return "\n".join(
+        [
+            f"Motivo: {why}.",
+            f"Intenção: {state['intent']}.",
+            f"Pedido em foco: {state.get('focused_order_id') or 'nenhum'}.",
+            "Últimas mensagens do Customer:",
+            *(f"- {text[:SUMMARY_MESSAGE_CHARS]}" for text in said[-SUMMARY_MESSAGES:]),
+        ]
+    )
+
+
 def build_graph(
     checkpointer: BaseCheckpointSaver[Any], deps: AgentDeps
 ) -> CompiledStateGraph[Any, RunContext]:
@@ -72,6 +120,13 @@ def build_graph(
             "intent": classification.intents[0].value,
             "order_id": classification.entities.order_id,
             "tool_result": None,
+            "ticket": None,
+            # Wants-human goes straight to a Ticket: no retention attempt.
+            "escalation": (
+                TicketReason.CUSTOMER_REQUESTED.value
+                if classification.entities.wants_human
+                else None
+            ),
         }
 
     async def resolve_context(state: ConversationState) -> ConversationState:
@@ -79,15 +134,48 @@ def build_graph(
         return {}
 
     async def act(state: ConversationState, runtime: Runtime[RunContext]) -> ConversationState:
-        result = await get_order_status(
-            deps.tools, runtime.context.customer_id, {"order_id": state.get("order_id")}
+        result = await call_with_retry(
+            lambda: get_order_status(
+                deps.tools, runtime.context.customer_id, {"order_id": state.get("order_id")}
+            ),
+            deps.retry,
         )
-        return {"tool_result": result.model_dump(mode="json")}
+        update: ConversationState = {"tool_result": result.model_dump(mode="json")}
+        if isinstance(result, OrderStatusResult):
+            update["focused_order_id"] = result.order_id
+        if is_failure(result):
+            failures = dict(state.get("tool_failures") or {})
+            failures["get_order_status"] = failures.get("get_order_status", 0) + 1
+            update["tool_failures"] = failures
+            if failures["get_order_status"] >= deps.failures_before_escalation:
+                update["escalation"] = TicketReason.TOOL_FAILURE.value
+        return update
+
+    async def escalate(state: ConversationState, runtime: Runtime[RunContext]) -> ConversationState:
+        escalation = state.get("escalation")
+        assert escalation is not None  # routed here only when set
+        reason = TicketReason(escalation)
+        failing = "get_order_status" if reason is TicketReason.TOOL_FAILURE else None
+        result = await create_support_ticket(
+            deps.tools,
+            runtime.context.customer_id,
+            runtime.context.conversation_id,
+            {
+                "reason": reason,
+                "priority": PRIORITY[reason],
+                "summary": _ticket_summary(state, reason, failing),
+                "order_id": state.get("focused_order_id"),
+            },
+        )
+        return {"ticket": result.model_dump(mode="json")}
 
     async def respond(state: ConversationState) -> ConversationState:
         return {"messages": [AIMessage(content=await _reply(state))]}
 
     async def _reply(state: ConversationState) -> str:
+        if state.get("ticket") is not None:
+            ticket = _ticket_result.validate_python(state["ticket"])
+            return TICKET_FAILED if isinstance(ticket, ToolError) else render_ticket(ticket)
         if state["intent"] != Intent.ORDER_STATUS:
             return CAPABILITIES
         if state.get("tool_result") is None:
@@ -99,32 +187,44 @@ def build_graph(
         reply = await deps.llm.respond(_history(state, deps.history_window), facts.text)
         return reply if reply.strip() and is_grounded(reply, facts) else facts.text
 
-    def after_classify(state: ConversationState) -> Literal["resolve_context", "respond"]:
+    def after_classify(
+        state: ConversationState,
+    ) -> Literal["escalate", "resolve_context", "respond"]:
+        if state.get("escalation"):
+            return "escalate"
         return "resolve_context" if state["intent"] == Intent.ORDER_STATUS else "respond"
 
     def after_resolve(state: ConversationState) -> Literal["act", "respond"]:
         return "act" if state.get("order_id") else "respond"
 
+    def after_act(state: ConversationState) -> Literal["escalate", "respond"]:
+        return "escalate" if state.get("escalation") else "respond"
+
     builder = StateGraph(ConversationState, context_schema=RunContext)
     builder.add_node("classify_intent", classify_intent)
     builder.add_node("resolve_context", resolve_context)
     builder.add_node("act", act)
+    builder.add_node("escalate", escalate)
     builder.add_node("respond", respond)
     builder.add_edge(START, "classify_intent")
     builder.add_conditional_edges("classify_intent", after_classify)
     builder.add_conditional_edges("resolve_context", after_resolve)
-    builder.add_edge("act", "respond")
+    builder.add_conditional_edges("act", after_act)
+    builder.add_edge("escalate", "respond")
     builder.add_edge("respond", END)
     return builder.compile(checkpointer=checkpointer)
 
 
 async def run_turn(
-    graph: CompiledStateGraph[Any, RunContext], thread_id: str, customer_id: str, message: str
+    graph: CompiledStateGraph[Any, RunContext],
+    conversation_id: uuid.UUID,
+    customer_id: str,
+    message: str,
 ) -> Turn:
     """Run one Customer message through the graph on the Conversation's thread."""
     result = await graph.ainvoke(
         {"messages": [HumanMessage(content=message)]},
-        config={"configurable": {"thread_id": thread_id}},
-        context=RunContext(customer_id=customer_id),
+        config={"configurable": {"thread_id": str(conversation_id)}},
+        context=RunContext(customer_id=customer_id, conversation_id=conversation_id),
     )
     return Turn(reply=str(result["messages"][-1].content), intent=result["intent"])

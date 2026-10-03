@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from support_agent.logistics import ShipmentStatus
-from support_agent.models import OrderStatus
+from support_agent.models import OrderStatus, TicketReason
+from support_agent.tickets import TicketResult
 from support_agent.tools import ErrorCode, OrderStatusResult, ToolError
 
 ASK_ORDER_ID = (
@@ -20,6 +21,12 @@ ASK_ORDER_ID = (
 CAPABILITIES = (
     "Por enquanto consigo te ajudar a acompanhar seus pedidos: me diga o número do pedido "
     "e eu verifico o status e a entrega."
+)
+
+# Escalation must never leave the Customer without a way forward, even if the Ticket fails.
+TICKET_FAILED = (
+    "Não consegui abrir um chamado para um atendente agora. Por favor, tente novamente em "
+    "alguns minutos."
 )
 
 ORDER_STATUS_LABELS = {
@@ -53,6 +60,20 @@ def render_error(error: ToolError) -> str:
     if error.code is ErrorCode.INVALID_ARGUMENT:
         return "Não reconheci o número do pedido. " + ASK_ORDER_ID
     return "Não consegui consultar seu pedido agora. Tente novamente em alguns minutos."
+
+
+def render_ticket(ticket: TicketResult) -> str:
+    next_steps = (
+        f"Abri o chamado #{ticket.ticket_id} com o resumo da nossa conversa, então você não "
+        "vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim "
+        "que possível."
+    )
+    if ticket.reason is TicketReason.CUSTOMER_REQUESTED:
+        return f"Combinado, vou te passar para um atendente. {next_steps}"
+    return (
+        "Nossos sistemas estão instáveis e não consegui concluir a consulta, então vou te "
+        f"passar para um atendente. {next_steps}"
+    )
 
 
 @dataclass(frozen=True)
