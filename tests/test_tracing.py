@@ -1,13 +1,24 @@
 """LangSmith tracing of a Conversation turn, switched on by the standard env vars."""
 
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
 from langsmith import Client, tracing_context
 from langsmith.utils import get_env_var
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from support_agent.approvals import (
+    APPROVAL_RUN_NAME,
+    ApprovalDecision,
+    ApprovalPause,
+    ApprovalWorkflow,
+    build_approval_graph,
+)
+from support_agent.graph import TURN_RUN_NAME
 
 from .fakes import ScriptedLLM, order_status
 from .test_escalation_graph import Agent, ScriptedCarrier
@@ -34,11 +45,12 @@ class RecordingLangSmith(Client):
 @pytest.fixture
 def tracing_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[pytest.MonkeyPatch]:
     """LangSmith reads its env vars once per process; forget them around each test."""
+    forget = get_env_var.cache_clear  # type: ignore[attr-defined]  # an lru_cache under overloads
     monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
     monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
-    get_env_var.cache_clear()  # type: ignore[attr-defined]  # an lru_cache under overloads
+    forget()
     yield monkeypatch
-    get_env_var.cache_clear()  # type: ignore[attr-defined]  # an lru_cache under overloads
+    forget()
 
 
 @contextmanager
@@ -48,19 +60,24 @@ def recording() -> Iterator[RecordingLangSmith]:
         yield client
 
 
-async def test_each_node_of_a_turn_is_traced_under_the_conversation(
-    engine: AsyncEngine, tracing_env: pytest.MonkeyPatch
-) -> None:
-    tracing_env.setenv("LANGSMITH_TRACING", "true")
+async def ask_for_order_1002(engine: AsyncEngine) -> uuid.UUID:
+    """One Customer turn on a new Conversation; returns the Conversation id."""
     llm = ScriptedLLM()
     agent = Agent(engine, ScriptedCarrier(), llm)
     llm.on("cadê o 1002?", order_status("1002"))
     conversation_id = await agent.new_conversation()
+    await agent.say(conversation_id, "cadê o 1002?")
+    return conversation_id
 
+
+async def test_each_node_of_a_turn_is_traced_under_the_conversation(
+    engine: AsyncEngine, tracing_env: pytest.MonkeyPatch
+) -> None:
+    tracing_env.setenv("LANGSMITH_TRACING", "true")
     with recording() as langsmith:
-        await agent.say(conversation_id, "cadê o 1002?")
+        conversation_id = await ask_for_order_1002(engine)
 
-    [turn] = langsmith.named("conversation_turn")
+    [turn] = langsmith.named(TURN_RUN_NAME)
     assert turn["extra"]["metadata"]["conversation_id"] == str(conversation_id)
     for node in ("classify_intent", "resolve_context", "act", "respond"):
         [span] = langsmith.named(node)
@@ -75,12 +92,34 @@ async def test_each_node_of_a_turn_is_traced_under_the_conversation(
 async def test_nothing_is_traced_without_the_env_vars(
     engine: AsyncEngine, tracing_env: pytest.MonkeyPatch
 ) -> None:
-    llm = ScriptedLLM()
-    agent = Agent(engine, ScriptedCarrier(), llm)
-    llm.on("cadê o 1002?", order_status("1002"))
-    conversation_id = await agent.new_conversation()
-
     with recording() as langsmith:
-        await agent.say(conversation_id, "cadê o 1002?")
+        await ask_for_order_1002(engine)
 
     assert langsmith.created == {}
+
+
+async def test_an_approval_request_is_traced_by_its_id(tracing_env: pytest.MonkeyPatch) -> None:
+    tracing_env.setenv("LANGSMITH_TRACING", "true")
+    settled: list[uuid.UUID] = []
+
+    async def settle(approval_request_id: uuid.UUID) -> None:
+        settled.append(approval_request_id)
+
+    workflow = ApprovalWorkflow(build_approval_graph(InMemorySaver(), settle))
+    pause = ApprovalPause(
+        approval_request_id=uuid.uuid4(), refund_id=1, order_id="ORD-1001", amount_cents=100
+    )
+
+    with recording() as langsmith:
+        await workflow.start(pause)
+        await workflow.resume(
+            pause.approval_request_id,
+            ApprovalDecision(approved=True, attendant_id="att_julia", reason=None),
+        )
+
+    started, decided = langsmith.named(APPROVAL_RUN_NAME)
+    for run in (started, decided):
+        assert run["extra"]["metadata"]["approval_request_id"] == str(pause.approval_request_id)
+    [settle_span] = langsmith.named("settle")
+    assert settle_span["parent_run_id"] == decided["id"]
+    assert settled == [pause.approval_request_id]

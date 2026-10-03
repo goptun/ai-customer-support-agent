@@ -9,6 +9,7 @@ import httpx
 from anthropic import AsyncAnthropic
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from langchain_core.tracers.langchain import wait_for_all_tracers
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
 from psycopg.rows import dict_row
@@ -187,6 +188,8 @@ def create_app(
             yield
         await redis.aclose()
         await engine.dispose()
+        # Send the LangSmith traces still queued; returns at once when tracing is off.
+        await asyncio.to_thread(wait_for_all_tracers)
 
     app = FastAPI(title="Customer Support Agent", lifespan=lifespan)
     bearer = HTTPBearer(auto_error=False)

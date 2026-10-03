@@ -552,6 +552,9 @@ def build_graph(
     return builder.compile(checkpointer=checkpointer)
 
 
+TURN_RUN_NAME = "conversation_turn"
+
+
 async def run_turn(
     graph: CompiledStateGraph[Any, RunContext],
     conversation_id: uuid.UUID,
@@ -565,7 +568,7 @@ async def run_turn(
     """
     config: RunnableConfig = {
         "configurable": {"thread_id": str(conversation_id)},
-        "run_name": "conversation_turn",
+        "run_name": TURN_RUN_NAME,
         "metadata": {"conversation_id": str(conversation_id), "customer_id": customer_id},
     }
     paused = (await graph.aget_state(config)).interrupts

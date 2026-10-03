@@ -15,7 +15,7 @@ from support_agent.approvals import build_approval_graph
 from support_agent.graph import AgentDeps, build_graph
 
 # Nodes only reach their dependencies when run; drawing the graph never does.
-_UNUSED = cast(Any, None)
+_NOT_RUN_WHEN_DRAWN = cast(Any, None)
 
 
 async def _never_settle(approval_request_id: uuid.UUID) -> None:
@@ -24,7 +24,9 @@ async def _never_settle(approval_request_id: uuid.UUID) -> None:
 
 def diagrams() -> dict[str, str]:
     """Mermaid source per README marker name."""
-    conversation = build_graph(InMemorySaver(), AgentDeps(llm=_UNUSED, tools=_UNUSED))
+    conversation = build_graph(
+        InMemorySaver(), AgentDeps(llm=_NOT_RUN_WHEN_DRAWN, tools=_NOT_RUN_WHEN_DRAWN)
+    )
     approval = build_approval_graph(InMemorySaver(), _never_settle)
     return {
         "conversation": conversation.get_graph().draw_mermaid(),

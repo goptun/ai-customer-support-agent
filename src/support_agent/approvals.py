@@ -59,8 +59,15 @@ def approval_thread_id(approval_request_id: uuid.UUID) -> str:
     return f"approval:{approval_request_id}"
 
 
+APPROVAL_RUN_NAME = "approval_workflow"
+
+
 def _config(approval_request_id: uuid.UUID) -> RunnableConfig:
-    return {"configurable": {"thread_id": approval_thread_id(approval_request_id)}}
+    return {
+        "configurable": {"thread_id": approval_thread_id(approval_request_id)},
+        "run_name": APPROVAL_RUN_NAME,
+        "metadata": {"approval_request_id": str(approval_request_id)},
+    }
 
 
 def build_approval_graph(
