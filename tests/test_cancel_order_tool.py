@@ -2,7 +2,7 @@
 
 import asyncio
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -33,13 +33,19 @@ from .test_ticket_tool import deps
 ANA = "cus_ana"
 
 
+def confirmed(order_id: str, refund_cents: int) -> dict[str, object]:
+    """cancel_order arguments: the Order and the Refund the Customer confirmed."""
+    return {"order_id": order_id, "expected_refund_cents": refund_cents}
+
+
 async def new_order(
     engine: AsyncEngine,
     status: OrderStatus = OrderStatus.PAID,
     total_paid_cents: int = 39900,
     customer_id: str = ANA,
+    placed_at: datetime = ANCHOR - timedelta(days=400),
 ) -> str:
-    """An Order of its own, placed long ago so it never shows up among recent Orders."""
+    """An Order of its own, placed long ago by default so it isn't among recent Orders."""
     order_id = f"ORD-9{uuid.uuid4().int % 10**10:010d}"
     async with session_factory(engine).begin() as session:
         session.add(
@@ -49,7 +55,7 @@ async def new_order(
                 status=status,
                 items=[{"sku": "SKU-1", "name": "Caneca", "quantity": 1}],
                 total_paid_cents=total_paid_cents,
-                placed_at=ANCHOR - timedelta(days=400),
+                placed_at=placed_at,
                 promised_delivery_date=None,
                 delivered_at=None,
             )
@@ -88,9 +94,7 @@ async def test_preview_states_the_full_refund_of_a_paid_order(engine: AsyncEngin
 
     result = await preview_cancellation(deps(engine), ANA, {"order_id": order_id})
 
-    assert result == CancellationPreview(
-        order_id=order_id, status=OrderStatus.PROCESSING, refund_cents=11980
-    )
+    assert result == CancellationPreview(order_id=order_id, refund_cents=11980)
     assert (await order_state(engine, order_id))[0] is OrderStatus.PROCESSING
 
 
@@ -115,7 +119,7 @@ async def test_preview_refuses_an_order_that_cannot_be_cancelled(
 async def test_paid_order_is_cancelled_with_its_full_refund_issued(engine: AsyncEngine) -> None:
     order_id = await new_order(engine, OrderStatus.PAID, 39900)
 
-    result = await cancel_order(deps(engine), ANA, {"order_id": order_id})
+    result = await cancel_order(deps(engine), ANA, confirmed(order_id, 39900))
 
     assert isinstance(result, CancellationResult)
     status, [cancellation], [refund] = await order_state(engine, order_id)
@@ -132,7 +136,7 @@ async def test_paid_order_is_cancelled_with_its_full_refund_issued(engine: Async
 async def test_unpaid_order_is_cancelled_without_a_refund(engine: AsyncEngine) -> None:
     order_id = await new_order(engine, OrderStatus.PENDING_PAYMENT, 0)
 
-    result = await cancel_order(deps(engine), ANA, {"order_id": order_id})
+    result = await cancel_order(deps(engine), ANA, confirmed(order_id, 0))
 
     assert result == CancellationResult(order_id=order_id, refund=None)
     status, [_], refunds = await order_state(engine, order_id)
@@ -143,7 +147,7 @@ async def test_unpaid_order_is_cancelled_without_a_refund(engine: AsyncEngine) -
 async def test_cancellation_and_its_refund_are_audited(engine: AsyncEngine) -> None:
     order_id = await new_order(engine, OrderStatus.PAID, 39900)
 
-    result = await cancel_order(deps(engine), ANA, {"order_id": order_id})
+    result = await cancel_order(deps(engine), ANA, confirmed(order_id, 39900))
 
     assert isinstance(result, CancellationResult) and result.refund is not None
     cancelled, refunded = await audit_of(engine, order_id)
@@ -167,8 +171,8 @@ async def test_repeated_confirmation_has_no_extra_effect(engine: AsyncEngine) ->
     order_id = await new_order(engine, OrderStatus.PAID, 39900)
     tool_deps = deps(engine)
 
-    first = await cancel_order(tool_deps, ANA, {"order_id": order_id})
-    again = await cancel_order(tool_deps, ANA, {"order_id": order_id})
+    first = await cancel_order(tool_deps, ANA, confirmed(order_id, 39900))
+    again = await cancel_order(tool_deps, ANA, confirmed(order_id, 39900))
 
     assert isinstance(first, CancellationResult)
     assert again == first
@@ -182,7 +186,7 @@ async def test_concurrent_confirmations_cancel_once(engine: AsyncEngine) -> None
     tool_deps = deps(engine)
 
     results = await asyncio.gather(
-        *(cancel_order(tool_deps, ANA, {"order_id": order_id}) for _ in range(3))
+        *(cancel_order(tool_deps, ANA, confirmed(order_id, 39900)) for _ in range(3))
     )
 
     assert all(isinstance(r, CancellationResult) for r in results)
@@ -191,10 +195,23 @@ async def test_concurrent_confirmations_cancel_once(engine: AsyncEngine) -> None
     assert len(cancellations) == 1 and len(refunds) == 1
 
 
+async def test_a_refund_other_than_the_confirmed_one_cancels_nothing(
+    engine: AsyncEngine,
+) -> None:
+    # Paid after the Customer was told nothing would be refunded.
+    order_id = await new_order(engine, OrderStatus.PAID, 39900)
+
+    result = await cancel_order(deps(engine), ANA, confirmed(order_id, 0))
+
+    assert result == ToolError(code=ErrorCode.REFUND_CHANGED, order_id=order_id)
+    assert await order_state(engine, order_id) == (OrderStatus.PAID, [], [])
+    assert await audit_of(engine, order_id) == []
+
+
 async def test_dispatched_order_is_not_cancelled(engine: AsyncEngine) -> None:
     order_id = await new_order(engine, OrderStatus.SHIPPED, 18900)
 
-    result = await cancel_order(deps(engine), ANA, {"order_id": order_id})
+    result = await cancel_order(deps(engine), ANA, confirmed(order_id, 18900))
 
     assert result == ToolError(code=ErrorCode.ALREADY_DISPATCHED, order_id=order_id)
     assert await order_state(engine, order_id) == (OrderStatus.SHIPPED, [], [])
@@ -204,7 +221,7 @@ async def test_dispatched_order_is_not_cancelled(engine: AsyncEngine) -> None:
 async def test_order_of_another_customer_is_refused(engine: AsyncEngine) -> None:
     order_id = await new_order(engine, OrderStatus.PAID, 39900, customer_id="cus_bruno")
 
-    result = await cancel_order(deps(engine), ANA, {"order_id": order_id})
+    result = await cancel_order(deps(engine), ANA, confirmed(order_id, 39900))
 
     assert result == ToolError(code=ErrorCode.NOT_OWNED, order_id=order_id)
     assert await order_state(engine, order_id) == (OrderStatus.PAID, [], [])
@@ -213,8 +230,8 @@ async def test_order_of_another_customer_is_refused(engine: AsyncEngine) -> None
 async def test_unknown_order_and_invalid_argument_are_structured_errors(
     engine: AsyncEngine,
 ) -> None:
-    unknown = await cancel_order(deps(engine), ANA, {"order_id": "ORD-999999999999"})
-    invalid = await cancel_order(deps(engine), ANA, {"order_id": "abc'; DROP TABLE"})
+    unknown = await cancel_order(deps(engine), ANA, confirmed("ORD-999999999999", 0))
+    invalid = await cancel_order(deps(engine), ANA, confirmed("abc'; DROP TABLE", 0))
 
     assert unknown == ToolError(code=ErrorCode.NOT_FOUND, order_id="ORD-999999999999")
     assert invalid == ToolError(code=ErrorCode.INVALID_ARGUMENT)
@@ -235,7 +252,7 @@ async def test_a_failed_refund_leaves_the_order_untouched(engine: AsyncEngine) -
         )
 
     with pytest.raises(IntegrityError):
-        await cancel_order(deps(engine), ANA, {"order_id": order_id})
+        await cancel_order(deps(engine), ANA, confirmed(order_id, 39900))
 
     assert await order_state(engine, order_id) == (OrderStatus.PAID, [], [])
     assert await audit_of(engine, order_id) == []

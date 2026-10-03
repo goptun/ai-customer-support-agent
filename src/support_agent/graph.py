@@ -43,6 +43,7 @@ from support_agent.replies import (
     render_order_status,
     render_queued,
     render_recent_orders,
+    render_refund_changed,
     render_single_recent_order,
     render_ticket,
 )
@@ -69,8 +70,8 @@ _tool_result = TypeAdapter[ToolResult](ToolResult)
 _order_summaries = TypeAdapter(list[OrderSummary])
 _ticket_result = TypeAdapter[TicketResult | ToolError](TicketResult | ToolError)
 _knowledge_result = TypeAdapter[KnowledgeBaseResult | ToolError](KnowledgeBaseResult | ToolError)
-CancellationToolResult = CancellationPreview | CancellationResult | ToolError
-_cancellation_result = TypeAdapter[CancellationToolResult](CancellationToolResult)
+_CancellationToolResult = CancellationPreview | CancellationResult | ToolError
+_cancellation_result = TypeAdapter[_CancellationToolResult](_CancellationToolResult)
 _cancellation_preview = TypeAdapter(CancellationPreview)
 ORDER_INTENTS = frozenset({Intent.ORDER_STATUS, Intent.CANCEL_ORDER})
 # Refusals that still prove the Order exists and is the Customer's.
@@ -111,7 +112,7 @@ class ConversationState(TypedDict, total=False):
     queued_intents: list[QueuedIntent]  # raised but not handled yet, oldest first
     # Set while a Cancellation awaits explicit confirmation (CancellationPreview).
     pending_cancellation: dict[str, Any] | None
-    cancellation_dropped: str | None  # Order whose pending Cancellation the reply must report
+    cancellation_notice: str | None  # what happened to a pending Cancellation; leads the reply
 
 
 @dataclass(frozen=True)
@@ -297,16 +298,27 @@ def build_graph(
             "order_id": preview.order_id,
             "pending_cancellation": None,
             "confirmation": decision.value,
+            "single_recent_order": False,  # announced along with the question already
+            # What the Customer confirmed: the cancel node acts on exactly this.
+            "tool_result": preview.model_dump(mode="json"),
         }
         if decision is Confirmation.OTHER:
-            update["cancellation_dropped"] = preview.order_id
+            update["cancellation_notice"] = render_cancellation_dropped(preview.order_id)
         return update
 
     async def cancel(state: ConversationState, runtime: Runtime[RunContext]) -> ConversationState:
-        # The Order is the one the Customer confirmed, never one the LLM picked afterwards.
+        # Order and Refund are the ones the Customer confirmed, never ones the LLM picked.
+        confirmed = _cancellation_preview.validate_python(state["tool_result"])
         result = await cancel_order(
-            deps.tools, runtime.context.customer_id, {"order_id": state.get("order_id")}
+            deps.tools,
+            runtime.context.customer_id,
+            {"order_id": confirmed.order_id, "expected_refund_cents": confirmed.refund_cents},
         )
+        if isinstance(result, ToolError) and result.code is ErrorCode.REFUND_CHANGED:
+            # Ask again with what cancelling would do now.
+            update = await _check_cancellation(state, runtime.context.customer_id)
+            update["cancellation_notice"] = render_refund_changed(confirmed.order_id)
+            return update
         return {"tool_result": result.model_dump(mode="json")}
 
     async def consult_knowledge_base(state: ConversationState) -> ConversationState:
@@ -335,10 +347,10 @@ def build_graph(
 
     async def respond(state: ConversationState) -> ConversationState:
         reply = await _reply(state)
-        dropped = state.get("cancellation_dropped")
-        if dropped:
-            reply = f"{render_cancellation_dropped(dropped)}\n\n{reply}"
-        return {"messages": [AIMessage(content=reply)], "cancellation_dropped": None}
+        notice = state.get("cancellation_notice")
+        if notice:
+            reply = f"{notice}\n\n{reply}"
+        return {"messages": [AIMessage(content=reply)], "cancellation_notice": None}
 
     async def _reply(state: ConversationState) -> str:
         if state.get("ticket") is not None:

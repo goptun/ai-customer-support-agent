@@ -17,13 +17,15 @@ from support_agent import audit
 from support_agent.models import ActorType, Cancellation, Order, OrderStatus, Refund, RefundStatus
 
 CANCELLABLE = frozenset({OrderStatus.PENDING_PAYMENT, OrderStatus.PAID, OrderStatus.PROCESSING})
-PAID = frozenset({OrderStatus.PAID, OrderStatus.PROCESSING})
+PAID_STATUSES = frozenset({OrderStatus.PAID, OrderStatus.PROCESSING})
 REFUND_REASON = "Cancelamento do pedido antes do envio"
 
 
 class CancellationRefusal(enum.StrEnum):
     ALREADY_DISPATCHED = "already_dispatched"
     ALREADY_CANCELLED = "already_cancelled"
+    # The Refund is no longer the one the Customer confirmed (e.g. the Order was paid since).
+    REFUND_CHANGED = "refund_changed"
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ def decide_cancellation(
         return CancellationRefusal.ALREADY_CANCELLED
     if status not in CANCELLABLE:
         return CancellationRefusal.ALREADY_DISPATCHED
-    if status not in PAID:
+    if status not in PAID_STATUSES:
         return CancellationPlan(refund_cents=0)
     return CancellationPlan(refund_cents=max(0, total_paid_cents - prior_refunds_cents))
 
@@ -73,12 +75,14 @@ class Cancellations:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def prior_refunds_cents(self, order_id: str) -> int:
+    async def preview(self, order: Order) -> CancellationPlan | CancellationRefusal:
+        """What cancelling the Order now would do; changes nothing."""
         async with self._sessions() as session:
-            return await _prior_refunds_cents(session, order_id)
+            prior = await _prior_refunds_cents(session, order.id)
+        return decide_cancellation(order.status, order.total_paid_cents, prior)
 
     async def cancel(
-        self, order_id: str, customer_id: str
+        self, order_id: str, customer_id: str, expected_refund_cents: int
     ) -> CancellationResult | CancellationRefusal:
         """Cancel the Order (and issue its Refund), or return the Cancellation already made.
 
@@ -95,13 +99,15 @@ class Cancellations:
                 select(Cancellation).where(Cancellation.idempotency_key == key)
             )
             if existing is not None:
-                return await _result(session, existing)
+                return await _cancellation_result(session, existing)
 
             decision = decide_cancellation(
                 order.status, order.total_paid_cents, await _prior_refunds_cents(session, order_id)
             )
             if isinstance(decision, CancellationRefusal):
                 return decision
+            if decision.refund_cents != expected_refund_cents:
+                return CancellationRefusal.REFUND_CHANGED
 
             refund_id = None
             if decision.refund_cents > 0:
@@ -123,7 +129,7 @@ class Cancellations:
             )
             session.add(cancellation)
             await session.flush()
-            result = await _result(session, cancellation)
+            result = await _cancellation_result(session, cancellation)
 
             audit.record(
                 session,
@@ -151,7 +157,9 @@ class Cancellations:
         return result
 
 
-async def _result(session: AsyncSession, cancellation: Cancellation) -> CancellationResult:
+async def _cancellation_result(
+    session: AsyncSession, cancellation: Cancellation
+) -> CancellationResult:
     refund = None
     if cancellation.refund_id is not None:
         row = await session.get(Refund, cancellation.refund_id)

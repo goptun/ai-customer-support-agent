@@ -5,9 +5,11 @@ import uuid
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.db import session_factory
 from support_agent.graph import Turn, run_turn
 from support_agent.llm import Confirmation
-from support_agent.models import OrderStatus
+from support_agent.models import Customer, Order, OrderStatus
+from support_agent.seed import ANCHOR
 
 from .fakes import ScriptedLLM, cancel_order, order_status
 from .test_cancel_order_tool import new_order, order_state
@@ -151,6 +153,49 @@ async def test_confirmation_survives_a_restart(engine: AsyncEngine) -> None:
 
     assert (await order_state(engine, order_id))[0] is OrderStatus.CANCELLED
     assert "R$ 119,80" in done.reply
+
+
+async def test_a_refund_that_changed_before_the_yes_is_asked_again(
+    engine: AsyncEngine,
+) -> None:
+    ana, llm = agent(engine)
+    order_id = await new_order(engine, OrderStatus.PENDING_PAYMENT, 0)
+    conversation_id, _ = await ask_to_cancel(ana, llm, order_id)
+    async with session_factory(engine).begin() as session:
+        order = await session.get(Order, order_id)
+        assert order is not None
+        order.status, order.total_paid_cents = OrderStatus.PAID, 39900
+    llm.on_confirmation("sim", Confirmation.CONFIRM)
+
+    again = await turn(ana, conversation_id, "sim")
+
+    assert await order_state(engine, order_id) == (OrderStatus.PAID, [], [])
+    assert "não cancelei" in again.reply
+    assert "R$ 399,00" in again.reply
+    assert again.pending_actions == [
+        {"type": "confirm_cancellation", "order_id": order_id, "refund_cents": 39900}
+    ]
+
+
+async def test_the_single_recent_order_is_announced_only_once(engine: AsyncEngine) -> None:
+    llm = ScriptedLLM()
+    solo = Agent(engine, ScriptedCarrier(), llm)
+    customer_id = f"cus_solo_{uuid.uuid4().hex[:8]}"
+    async with session_factory(engine).begin() as session:
+        session.add(Customer(id=customer_id, name="Solo", email=f"{customer_id}@example.com"))
+    order_id = await new_order(
+        engine, OrderStatus.PAID, 39900, customer_id=customer_id, placed_at=ANCHOR
+    )
+    conversation_id = await solo.new_conversation(customer_id)
+    llm.on("quero cancelar meu pedido", cancel_order())
+    llm.on_confirmation("pode cancelar", Confirmation.CONFIRM)
+
+    asked = await run_turn(solo.graph, conversation_id, customer_id, "quero cancelar meu pedido")
+    done = await run_turn(solo.graph, conversation_id, customer_id, "pode cancelar")
+
+    assert f"pedido recente seu, o {order_id}" in asked.reply
+    assert "pedido recente" not in done.reply
+    assert f"cancelei o pedido {order_id}" in done.reply
 
 
 async def test_cancelling_without_an_order_id_uses_the_focused_order(

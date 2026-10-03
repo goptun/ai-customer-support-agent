@@ -20,7 +20,6 @@ from support_agent.cancellations import (
     CancellationRefusal,
     CancellationResult,
     Cancellations,
-    decide_cancellation,
 )
 from support_agent.knowledge import KnowledgeBase, PolicyExcerpt
 from support_agent.logistics import (
@@ -29,7 +28,14 @@ from support_agent.logistics import (
     Tracking,
     TrackingNotFound,
 )
-from support_agent.models import ActorType, Order, OrderStatus, TicketPriority, TicketReason
+from support_agent.models import (
+    ActorType,
+    Order,
+    OrderStatus,
+    Shipment,
+    TicketPriority,
+    TicketReason,
+)
 from support_agent.orders import Orders
 from support_agent.tickets import NewTicket, TicketResult, Tickets
 
@@ -44,6 +50,14 @@ class ErrorCode(enum.StrEnum):
     TRACKING_NOT_FOUND = "tracking_not_found"
     ALREADY_DISPATCHED = "already_dispatched"
     ALREADY_CANCELLED = "already_cancelled"
+    REFUND_CHANGED = "refund_changed"
+
+
+REFUSAL_CODES = {
+    CancellationRefusal.ALREADY_DISPATCHED: ErrorCode.ALREADY_DISPATCHED,
+    CancellationRefusal.ALREADY_CANCELLED: ErrorCode.ALREADY_CANCELLED,
+    CancellationRefusal.REFUND_CHANGED: ErrorCode.REFUND_CHANGED,
+}
 
 
 class ToolError(BaseModel):
@@ -83,7 +97,6 @@ class CancellationPreview(BaseModel):
 
     kind: Literal["cancellation_preview"] = "cancellation_preview"
     order_id: str
-    status: OrderStatus
     refund_cents: int  # 0: nothing to refund
 
 
@@ -104,7 +117,7 @@ def _normalize_order_id(value: str) -> str:
     return f"ORD-{match.group(1)}"
 
 
-class GetOrderStatusArgs(BaseModel):
+class OrderIdArgs(BaseModel):
     # Unknown keys (e.g. a customer_id the LLM made up) are ignored, never trusted.
     model_config = ConfigDict(extra="ignore")
 
@@ -116,15 +129,9 @@ class GetOrderStatusArgs(BaseModel):
         return _normalize_order_id(value)
 
 
-class CancelOrderArgs(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    order_id: str
-
-    @field_validator("order_id")
-    @classmethod
-    def _normalize(cls, value: str) -> str:
-        return _normalize_order_id(value)
+class CancelOrderArgs(OrderIdArgs):
+    # The Refund the Customer was shown and confirmed; anything else cancels nothing.
+    expected_refund_cents: int = Field(ge=0)
 
 
 class CreateSupportTicketArgs(BaseModel):
@@ -165,16 +172,14 @@ async def get_order_status(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> OrderStatusResult | ToolError:
     try:
-        order_id = GetOrderStatusArgs.model_validate(args).order_id
+        order_id = OrderIdArgs.model_validate(args).order_id
     except ValidationError:
         return ToolError(code=ErrorCode.INVALID_ARGUMENT)
 
-    found = await deps.orders.find_with_shipment(order_id)
-    if found is None:
-        return ToolError(code=ErrorCode.NOT_FOUND, order_id=order_id)
+    found = await _owned_order(deps, customer_id, order_id)
+    if isinstance(found, ToolError):
+        return found
     order, shipment = found
-    if order.customer_id != customer_id:
-        return ToolError(code=ErrorCode.NOT_OWNED, order_id=order_id)
 
     shipment_info = None
     if shipment is not None:
@@ -205,49 +210,53 @@ async def get_order_status(
 
 
 async def _owned_order(
-    deps: ToolDeps, customer_id: str, args: Mapping[str, object]
-) -> Order | ToolError:
-    try:
-        order_id = CancelOrderArgs.model_validate(args).order_id
-    except ValidationError:
-        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    deps: ToolDeps, customer_id: str, order_id: str
+) -> tuple[Order, Shipment | None] | ToolError:
     found = await deps.orders.find_with_shipment(order_id)
     if found is None:
         return ToolError(code=ErrorCode.NOT_FOUND, order_id=order_id)
     if found[0].customer_id != customer_id:
         return ToolError(code=ErrorCode.NOT_OWNED, order_id=order_id)
-    return found[0]
+    return found
+
+
+def _refused(refusal: CancellationRefusal, order_id: str) -> ToolError:
+    return ToolError(code=REFUSAL_CODES[refusal], order_id=order_id)
 
 
 async def preview_cancellation(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> CancellationPreview | ToolError:
     """Check whether the Order can be Cancelled and what would be refunded; changes nothing."""
-    order = await _owned_order(deps, customer_id, args)
-    if isinstance(order, ToolError):
-        return order
-    decision = decide_cancellation(
-        order.status,
-        order.total_paid_cents,
-        await deps.cancellations.prior_refunds_cents(order.id),
-    )
-    if isinstance(decision, CancellationRefusal):
-        return ToolError(code=ErrorCode(decision.value), order_id=order.id)
-    return CancellationPreview(
-        order_id=order.id, status=order.status, refund_cents=decision.refund_cents
-    )
+    try:
+        order_id = OrderIdArgs.model_validate(args).order_id
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    found = await _owned_order(deps, customer_id, order_id)
+    if isinstance(found, ToolError):
+        return found
+    plan = await deps.cancellations.preview(found[0])
+    if isinstance(plan, CancellationRefusal):
+        return _refused(plan, order_id)
+    return CancellationPreview(order_id=order_id, refund_cents=plan.refund_cents)
 
 
 async def cancel_order(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> CancellationResult | ToolError:
     """Cancel the whole Order, issuing its full Refund if paid. Only after explicit confirmation."""
-    order = await _owned_order(deps, customer_id, args)
-    if isinstance(order, ToolError):
-        return order
-    result = await deps.cancellations.cancel(order.id, customer_id)
+    try:
+        parsed = CancelOrderArgs.model_validate(args)
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    found = await _owned_order(deps, customer_id, parsed.order_id)
+    if isinstance(found, ToolError):
+        return found
+    result = await deps.cancellations.cancel(
+        parsed.order_id, customer_id, parsed.expected_refund_cents
+    )
     if isinstance(result, CancellationRefusal):
-        return ToolError(code=ErrorCode(result.value), order_id=order.id)
+        return _refused(result, parsed.order_id)
     return result
 
 

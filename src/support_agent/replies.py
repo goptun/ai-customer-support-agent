@@ -158,6 +158,13 @@ def render_cancellation_dropped(order_id: str) -> str:
     return f"Como você não confirmou, não cancelei o pedido {order_id}."
 
 
+def render_refund_changed(order_id: str) -> str:
+    return (
+        f"O pedido {order_id} mudou desde a minha pergunta e o reembolso não seria mais o que "
+        "você confirmou, então não cancelei nada."
+    )
+
+
 def render_recent_orders(orders: list[OrderSummary]) -> str:
     lines = [
         f"- {order.order_id}, feito em {_format_date(order.placed_at)}: "
