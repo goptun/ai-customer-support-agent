@@ -113,14 +113,70 @@ ORDERS: list[dict[str, Any]] = [
         "promised_delivery_date": _on(-50),
         "delivered_at": _at(-51),
     },
+    {
+        "id": "ORD-1004",
+        "customer_id": "cus_ana",
+        "status": OrderStatus.SHIPPED,
+        "items": [{"sku": "CAFETEIRA", "name": "Cafeteira", "qty": 1, "unit_cents": 32900}],
+        "total_paid_cents": 32900,
+        "placed_at": _at(-12),
+        "promised_delivery_date": _on(-2),
+        "delivered_at": None,
+    },
+    {
+        "id": "ORD-2004",
+        "customer_id": "cus_bruno",
+        "status": OrderStatus.SHIPPED,
+        "items": [{"sku": "CADEIRA", "name": "Cadeira Gamer", "qty": 1, "unit_cents": 89900}],
+        "total_paid_cents": 89900,
+        "placed_at": _at(-15),
+        "promised_delivery_date": _on(-5),
+        "delivered_at": None,
+    },
+    {
+        "id": "ORD-3003",
+        "customer_id": "cus_carla",
+        "status": OrderStatus.SHIPPED,
+        "items": [{"sku": "TAPETE", "name": "Tapete de Yoga", "qty": 1, "unit_cents": 9900}],
+        "total_paid_cents": 9900,
+        "placed_at": _at(-5),
+        "promised_delivery_date": _on(3),
+        "delivered_at": None,
+    },
+    {
+        "id": "ORD-3004",
+        "customer_id": "cus_carla",
+        "status": OrderStatus.SHIPPED,
+        "items": [{"sku": "GARRAFA", "name": "Garrafa Térmica", "qty": 1, "unit_cents": 7990}],
+        "total_paid_cents": 7990,
+        "placed_at": _at(-5),
+        "promised_delivery_date": _on(3),
+        "delivered_at": None,
+    },
+    {
+        "id": "ORD-3005",
+        "customer_id": "cus_carla",
+        "status": OrderStatus.SHIPPED,
+        "items": [{"sku": "ABAJUR", "name": "Abajur de Mesa", "qty": 1, "unit_cents": 13900}],
+        "total_paid_cents": 13900,
+        "placed_at": _at(-4),
+        "promised_delivery_date": _on(4),
+        "delivered_at": None,
+    },
 ]
 
-# One Shipment per Dispatched Order (shipped or delivered).
+# One Shipment per Dispatched Order (shipped or delivered). Tracking codes select the
+# logistics mock scenario (see support_agent.logistics_mock).
 SHIPMENTS: list[dict[str, Any]] = [
     {"order_id": "ORD-1001", "tracking_code": "BR100000001", "dispatched_at": _at(-17)},
     {"order_id": "ORD-1002", "tracking_code": "BR100000002", "dispatched_at": _at(-4)},
     {"order_id": "ORD-2002", "tracking_code": "BR200000002", "dispatched_at": _at(-27)},
     {"order_id": "ORD-3002", "tracking_code": "BR300000002", "dispatched_at": _at(-57)},
+    {"order_id": "ORD-1004", "tracking_code": "BR100000004", "dispatched_at": _at(-10)},
+    {"order_id": "ORD-2004", "tracking_code": "BR200000004", "dispatched_at": _at(-13)},
+    {"order_id": "ORD-3003", "tracking_code": "BR300000003", "dispatched_at": _at(-3)},
+    {"order_id": "ORD-3004", "tracking_code": "BR300000004", "dispatched_at": _at(-3)},
+    {"order_id": "ORD-3005", "tracking_code": "BR300000005", "dispatched_at": _at(-2)},
 ]
 
 
