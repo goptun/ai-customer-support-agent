@@ -4,11 +4,13 @@ import uuid
 from typing import Any
 
 import httpx
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.cancellations import Cancellations
 from support_agent.db import session_factory
 from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
 from support_agent.llm import Classification, Entities, Intent
@@ -60,20 +62,27 @@ class SpyLLM(ScriptedLLM):
 
 
 class Agent:
-    def __init__(self, engine: AsyncEngine, carrier: ScriptedCarrier, llm: ScriptedLLM) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        carrier: ScriptedCarrier,
+        llm: ScriptedLLM,
+        checkpointer: BaseCheckpointSaver[Any] | None = None,
+    ) -> None:
         self.engine = engine
         sessions = session_factory(engine)
         http = httpx.AsyncClient(
             base_url="http://logistics.test", transport=httpx.MockTransport(carrier)
         )
         self.graph: CompiledStateGraph[Any, RunContext] = build_graph(
-            InMemorySaver(),
+            checkpointer or InMemorySaver(),
             AgentDeps(
                 llm=llm,
                 tools=ToolDeps(
                     orders=Orders(sessions),
                     logistics=LogisticsClient(http, timeout_seconds=0.5),
                     tickets=Tickets(sessions),
+                    cancellations=Cancellations(sessions),
                     knowledge_base=lexical_knowledge_base(sessions),
                     today=ANCHOR.date,
                 ),

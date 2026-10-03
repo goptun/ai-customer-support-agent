@@ -9,12 +9,19 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from support_agent.cancellations import CancellationResult
 from support_agent.llm import Intent
 from support_agent.logistics import ShipmentStatus
 from support_agent.models import OrderStatus, TicketReason
 from support_agent.orders import OrderSummary
 from support_agent.tickets import TicketResult
-from support_agent.tools import ErrorCode, KnowledgeBaseResult, OrderStatusResult, ToolError
+from support_agent.tools import (
+    CancellationPreview,
+    ErrorCode,
+    KnowledgeBaseResult,
+    OrderStatusResult,
+    ToolError,
+)
 
 ASK_ORDER_ID = (
     "Claro, posso verificar! Qual é o número do pedido? Você encontra no e-mail de "
@@ -22,9 +29,10 @@ ASK_ORDER_ID = (
 )
 CAPABILITIES = (
     "Sou o assistente de atendimento da loja. Por enquanto consigo te ajudar a acompanhar "
-    "seus pedidos (me diga o número do pedido e eu verifico o status e a entrega) e tirar "
-    "dúvidas sobre as políticas da loja, como prazos de entrega, trocas e reembolsos. Se "
-    "preferir, também posso te passar para um atendente."
+    "seus pedidos (me diga o número do pedido e eu verifico o status e a entrega), cancelar "
+    "pedidos que ainda não foram enviados e tirar dúvidas sobre as políticas da loja, como "
+    "prazos de entrega, trocas e reembolsos. Se preferir, também posso te passar para um "
+    "atendente."
 )
 CLARIFICATION = (
     "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? "
@@ -73,6 +81,11 @@ def _format_date(value: date | datetime) -> str:
     return value.strftime("%d/%m/%Y")
 
 
+def _format_money(cents: int) -> str:
+    reais, centavos = divmod(cents, 100)
+    return f"R$ {reais:,}".replace(",", ".") + f",{centavos:02d}"
+
+
 def render_error(error: ToolError) -> str:
     if error.code in (ErrorCode.NOT_FOUND, ErrorCode.NOT_OWNED):
         # Identical wording for both: never reveal that someone else's Order exists.
@@ -82,6 +95,15 @@ def render_error(error: ToolError) -> str:
         )
     if error.code is ErrorCode.INVALID_ARGUMENT:
         return "Não reconheci o número do pedido. " + ASK_ORDER_ID
+    if error.code is ErrorCode.ALREADY_DISPATCHED:
+        return (
+            f"O pedido {error.order_id} já foi enviado à transportadora, então não pode mais ser "
+            "cancelado. Você pode recusar a entrega quando ela chegar ou, depois de receber, "
+            "solicitar a devolução (Política de Cancelamento; Política de Devolução e Direito "
+            "de Arrependimento)."
+        )
+    if error.code is ErrorCode.ALREADY_CANCELLED:
+        return f"O pedido {error.order_id} já está cancelado, não há mais nada a fazer nele."
     return "Não consegui consultar seu pedido agora. Tente novamente em alguns minutos."
 
 
@@ -102,6 +124,38 @@ def render_ticket(ticket: TicketResult) -> str:
         "Nossos sistemas estão instáveis e não consegui concluir a consulta, então vou te "
         f"passar para um atendente. {next_steps}"
     )
+
+
+def render_cancellation_question(preview: CancellationPreview) -> str:
+    if preview.refund_cents > 0:
+        refund = (
+            f"Como ele já está pago, o reembolso integral de {_format_money(preview.refund_cents)} "
+            "será feito automaticamente."
+        )
+    else:
+        refund = "Como não há pagamento a devolver, não há valor a reembolsar."
+    return (
+        f"Você quer mesmo cancelar o pedido {preview.order_id} inteiro? {refund} "
+        'Responda "sim" para confirmar o cancelamento ou "não" para manter o pedido.'
+    )
+
+
+def render_cancelled(result: CancellationResult) -> str:
+    done = f"Pronto, cancelei o pedido {result.order_id}."
+    if result.refund is None:
+        return done
+    return (
+        f"{done} O reembolso de {_format_money(result.refund.amount_cents)} foi emitido "
+        f"(reembolso #{result.refund.refund_id})."
+    )
+
+
+def render_cancellation_kept(order_id: str) -> str:
+    return f"Tudo bem, não cancelei nada: o pedido {order_id} continua ativo."
+
+
+def render_cancellation_dropped(order_id: str) -> str:
+    return f"Como você não confirmou, não cancelei o pedido {order_id}."
 
 
 def render_recent_orders(orders: list[OrderSummary]) -> str:

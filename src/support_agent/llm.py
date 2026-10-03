@@ -21,6 +21,18 @@ class Intent(enum.StrEnum):
     OTHER = "other"
 
 
+class Confirmation(enum.StrEnum):
+    """How the Customer answered a request for explicit confirmation."""
+
+    CONFIRM = "confirm"
+    DENY = "deny"
+    OTHER = "other"  # anything that is not a clear yes or no
+
+
+class ConfirmationReply(BaseModel):
+    decision: Confirmation
+
+
 class Entities(BaseModel):
     order_id: str | None = Field(
         default=None, description="Order number exactly as the Customer wrote it, if any"
@@ -50,6 +62,10 @@ class ConversationMessage:
 class LLM(Protocol):
     async def classify(self, history: Sequence[ConversationMessage]) -> Classification: ...
 
+    async def classify_confirmation(self, history: Sequence[ConversationMessage]) -> Confirmation:
+        """Classify the last Customer message as the answer to the agent's yes/no question."""
+        ...
+
     async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         """Write the reply to the last Customer message, using only `facts`."""
         ...
@@ -68,6 +84,15 @@ Intents:
 
 List every intent present, in the order raised. Extract the order number exactly as written \
 (e.g. "123", "ORD-1002"). confidence is how sure you are about the first intent."""
+
+CONFIRM_SYSTEM = """\
+The support agent of a Brazilian online store asked the Customer to confirm an action \
+(e.g. cancelling an order) and is waiting for an explicit answer. Classify the Customer's \
+LAST message:
+- confirm: an explicit, unconditional yes to exactly what the agent asked
+- deny: an explicit no, or the Customer wants to keep things as they are
+- other: anything else — doubts, questions, conditions, a different subject or order, or \
+anything you are unsure about. When in doubt, answer other."""
 
 RESPOND_SYSTEM = """\
 You are the customer support agent of a Brazilian online store, replying in Brazilian \
@@ -101,6 +126,19 @@ class AnthropicLLM:
             # Refusal or truncation: treat as an unconfident "other" so the agent asks again.
             return Classification(intents=[Intent.OTHER], confidence=0.0, entities=Entities())
         return response.parsed_output
+
+    async def classify_confirmation(self, history: Sequence[ConversationMessage]) -> Confirmation:
+        response = await self._client.messages.parse(
+            model=self._classifier_model,
+            max_tokens=128,
+            system=CONFIRM_SYSTEM,
+            messages=_to_params(history),
+            output_format=ConfirmationReply,
+        )
+        # Refusal or truncation is not a yes: nothing happens without an explicit confirm.
+        if response.parsed_output is None:
+            return Confirmation.OTHER
+        return response.parsed_output.decision
 
     async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         response = await self._client.messages.create(

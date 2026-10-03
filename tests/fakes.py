@@ -6,13 +6,25 @@ from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from support_agent.knowledge import KnowledgeBase
-from support_agent.llm import Classification, ConversationMessage, Entities, Intent
+from support_agent.llm import (
+    Classification,
+    Confirmation,
+    ConversationMessage,
+    Entities,
+    Intent,
+)
 from support_agent.models import EMBEDDING_DIM
 
 
 def order_status(order_id: str | None = None) -> Classification:
     return Classification(
         intents=[Intent.ORDER_STATUS], confidence=0.95, entities=Entities(order_id=order_id)
+    )
+
+
+def cancel_order(order_id: str | None = None) -> Classification:
+    return Classification(
+        intents=[Intent.CANCEL_ORDER], confidence=0.95, entities=Entities(order_id=order_id)
     )
 
 
@@ -23,18 +35,25 @@ def faq() -> Classification:
 class ScriptedLLM:
     """Fake LLM scripted by the Customer's message.
 
-    Unscripted messages classify as `other`; unscripted replies repeat the facts verbatim,
-    like a perfectly grounded model would.
+    Unscripted messages classify as `other` (also as answers to a confirmation); unscripted
+    replies repeat the facts verbatim, like a perfectly grounded model would.
     """
 
     def __init__(self) -> None:
         self._classifications: dict[str, Classification] = {}
+        self._confirmations: dict[str, Confirmation] = {}
         self._replies: dict[str, str] = {}
 
     def on(self, message: str, classification: Classification, reply: str | None = None) -> None:
         self._classifications[message] = classification
         if reply is not None:
             self._replies[message] = reply
+
+    def on_confirmation(self, message: str, confirmation: Confirmation) -> None:
+        self._confirmations[message] = confirmation
+
+    async def classify_confirmation(self, history: Sequence[ConversationMessage]) -> Confirmation:
+        return self._confirmations.get(_last_customer_message(history), Confirmation.OTHER)
 
     async def classify(self, history: Sequence[ConversationMessage]) -> Classification:
         return self._classifications.get(
