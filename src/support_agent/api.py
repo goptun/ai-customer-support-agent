@@ -1,8 +1,11 @@
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
+import httpx
+from anthropic import AsyncAnthropic
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -17,8 +20,12 @@ from support_agent.auth import InvalidToken, Principal, Role, issue_token, verif
 from support_agent.config import Settings, get_settings
 from support_agent.conversations import ConversationNotFound, Conversations
 from support_agent.db import session_factory
-from support_agent.graph import build_graph, run_turn
+from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
+from support_agent.llm import LLM, AnthropicLLM
+from support_agent.logistics import LogisticsClient
 from support_agent.models import Customer, MessageRole
+from support_agent.orders import Orders
+from support_agent.tools import ToolDeps
 
 
 class DevTokenRequest(BaseModel):
@@ -42,18 +49,44 @@ class ChatResponse(BaseModel):
     pending_actions: list[dict[str, Any]]
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def _today() -> date:
+    return datetime.now(UTC).date()
+
+
+def _anthropic_llm(settings: Settings) -> LLM:
+    if settings.anthropic_api_key is None:
+        raise RuntimeError("ANTHROPIC_API_KEY is required")
+    return AnthropicLLM(
+        AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()),
+        classifier_model=settings.classifier_model,
+        responder_model=settings.responder_model,
+    )
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    llm: LLM | None = None,
+    logistics_transport: httpx.AsyncBaseTransport | None = None,
+    today: Callable[[], date] = _today,
+) -> FastAPI:
+    """Build the app. Tests inject a fake LLM, a logistics transport and a fixed clock."""
     settings = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_async_engine(settings.database_url)
         redis = Redis.from_url(settings.redis_url)
-        async with AsyncConnectionPool(
-            settings.checkpointer_url,
-            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-            open=False,
-        ) as pool:
+        async with (
+            httpx.AsyncClient(
+                base_url=settings.logistics_url, transport=logistics_transport
+            ) as logistics_http,
+            AsyncConnectionPool(
+                settings.checkpointer_url,
+                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+                open=False,
+            ) as pool,
+        ):
             checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
             await checkpointer.setup()
             app.state.sessions = session_factory(engine)
@@ -63,7 +96,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ttl_seconds=settings.working_state_ttl_seconds,
                 window=settings.working_state_window,
             )
-            app.state.graph = build_graph(checkpointer)
+            tools = ToolDeps(
+                orders=Orders(app.state.sessions),
+                logistics=LogisticsClient(
+                    logistics_http, timeout_seconds=settings.logistics_timeout_seconds
+                ),
+                today=today,
+            )
+            app.state.graph = build_graph(
+                checkpointer,
+                AgentDeps(
+                    llm=llm or _anthropic_llm(settings),
+                    tools=tools,
+                    history_window=settings.working_state_window,
+                ),
+            )
             yield
         await redis.aclose()
         await engine.dispose()
@@ -107,14 +154,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         customer: Annotated[Principal, Depends(current_customer)],
     ) -> ChatResponse:
         conversations: Conversations = request.app.state.conversations
-        graph: CompiledStateGraph[Any] = request.app.state.graph
+        graph: CompiledStateGraph[Any, RunContext] = request.app.state.graph
         try:
             conversation_id = await conversations.open(customer.subject, body.conversation_id)
         except ConversationNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from None
 
         await conversations.record(conversation_id, MessageRole.CUSTOMER, body.message)
-        turn = await run_turn(graph, str(conversation_id), body.message)
+        turn = await run_turn(graph, str(conversation_id), customer.subject, body.message)
         await conversations.record(conversation_id, MessageRole.AGENT, turn.reply, turn.intent)
 
         return ChatResponse(

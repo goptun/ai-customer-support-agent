@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,11 @@ class Settings(BaseSettings):
     jwt_ttl_seconds: int = 3600
     working_state_ttl_seconds: int = 1800
     working_state_window: int = 20
+    anthropic_api_key: SecretStr | None = None
+    classifier_model: str = "claude-haiku-4-5"
+    responder_model: str = "claude-sonnet-5-5"
+    logistics_url: str = "http://logistics:8080"
+    logistics_timeout_seconds: float = 3.0
 
     @property
     def checkpointer_url(self) -> str:
