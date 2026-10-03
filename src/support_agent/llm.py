@@ -10,6 +10,7 @@ from typing import Literal, Protocol
 
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 
@@ -113,11 +114,14 @@ question, say you don't know instead of filling the gap."""
 
 
 class AnthropicLLM:
+    """Each call is an LLM span inside its node's span when LangSmith tracing is on."""
+
     def __init__(self, client: AsyncAnthropic, classifier_model: str, responder_model: str):
         self._client = client
         self._classifier_model = classifier_model
         self._responder_model = responder_model
 
+    @traceable(run_type="llm")
     async def classify(self, history: Sequence[ConversationMessage]) -> Classification:
         response = await self._client.messages.parse(
             model=self._classifier_model,
@@ -131,6 +135,7 @@ class AnthropicLLM:
             return Classification(intents=[Intent.OTHER], confidence=0.0, entities=Entities())
         return response.parsed_output
 
+    @traceable(run_type="llm")
     async def classify_confirmation(self, history: Sequence[ConversationMessage]) -> Confirmation:
         response = await self._client.messages.parse(
             model=self._classifier_model,
@@ -144,6 +149,7 @@ class AnthropicLLM:
             return Confirmation.OTHER
         return response.parsed_output.decision
 
+    @traceable(run_type="llm")
     async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         response = await self._client.messages.create(
             model=self._responder_model,

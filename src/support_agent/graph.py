@@ -561,8 +561,13 @@ async def run_turn(
     """Run one Customer message through the graph on the Conversation's thread.
 
     A run paused awaiting confirmation is resumed with the message as the Customer's answer.
+    With LANGSMITH_TRACING set, the turn is one LangSmith trace with a span per node.
     """
-    config: RunnableConfig = {"configurable": {"thread_id": str(conversation_id)}}
+    config: RunnableConfig = {
+        "configurable": {"thread_id": str(conversation_id)},
+        "run_name": "conversation_turn",
+        "metadata": {"conversation_id": str(conversation_id), "customer_id": customer_id},
+    }
     paused = (await graph.aget_state(config)).interrupts
     result = await graph.ainvoke(
         Command(resume=message) if paused else {"messages": [HumanMessage(content=message)]},
