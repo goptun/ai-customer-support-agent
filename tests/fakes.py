@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from support_agent.llm import ChatMessage, Classification, Entities, Intent
+from support_agent.llm import Classification, ConversationMessage, Entities, Intent
 
 
 def order_status(order_id: str | None = None) -> Classification:
@@ -25,15 +25,15 @@ class ScriptedLLM:
         if reply is not None:
             self._replies[message] = reply
 
-    async def classify(self, history: Sequence[ChatMessage]) -> Classification:
+    async def classify(self, history: Sequence[ConversationMessage]) -> Classification:
         return self._classifications.get(
             _last_customer_message(history),
             Classification(intents=[Intent.OTHER], confidence=1.0, entities=Entities()),
         )
 
-    async def respond(self, history: Sequence[ChatMessage], facts: str) -> str:
+    async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         return self._replies.get(_last_customer_message(history), facts)
 
 
-def _last_customer_message(history: Sequence[ChatMessage]) -> str:
+def _last_customer_message(history: Sequence[ConversationMessage]) -> str:
     return next(m.content for m in reversed(history) if m.role == "user")

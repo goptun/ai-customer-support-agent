@@ -11,7 +11,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from pydantic import TypeAdapter
 
-from support_agent.llm import LLM, ChatMessage, Intent
+from support_agent.llm import LLM, ConversationMessage, Intent
 from support_agent.replies import (
     ASK_ORDER_ID,
     CAPABILITIES,
@@ -54,9 +54,11 @@ class Turn:
     pending_actions: list[dict[str, Any]] = field(default_factory=list)
 
 
-def _history(state: ConversationState, window: int) -> list[ChatMessage]:
+def _history(state: ConversationState, window: int) -> list[ConversationMessage]:
     return [
-        ChatMessage(role="user" if isinstance(m, HumanMessage) else "assistant", content=m.text)
+        ConversationMessage(
+            role="user" if isinstance(m, HumanMessage) else "assistant", content=m.text
+        )
         for m in state["messages"][-window:]
     ]
 
@@ -94,8 +96,8 @@ def build_graph(
         if isinstance(result, ToolError):
             return render_error(result)
         facts = render_order_status(result)
-        reply = await deps.llm.respond(_history(state, deps.history_window), facts)
-        return reply if reply.strip() and is_grounded(reply, facts) else facts
+        reply = await deps.llm.respond(_history(state, deps.history_window), facts.text)
+        return reply if reply.strip() and is_grounded(reply, facts) else facts.text
 
     def after_classify(state: ConversationState) -> Literal["resolve_context", "respond"]:
         return "resolve_context" if state["intent"] == Intent.ORDER_STATUS else "respond"

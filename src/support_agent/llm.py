@@ -42,15 +42,15 @@ class Classification(BaseModel):
 
 
 @dataclass(frozen=True)
-class ChatMessage:
+class ConversationMessage:
     role: Literal["user", "assistant"]
     content: str
 
 
 class LLM(Protocol):
-    async def classify(self, history: Sequence[ChatMessage]) -> Classification: ...
+    async def classify(self, history: Sequence[ConversationMessage]) -> Classification: ...
 
-    async def respond(self, history: Sequence[ChatMessage], facts: str) -> str:
+    async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         """Write the reply to the last Customer message, using only `facts`."""
         ...
 
@@ -85,7 +85,7 @@ class AnthropicLLM:
         self._classifier_model = classifier_model
         self._responder_model = responder_model
 
-    async def classify(self, history: Sequence[ChatMessage]) -> Classification:
+    async def classify(self, history: Sequence[ConversationMessage]) -> Classification:
         response = await self._client.messages.parse(
             model=self._classifier_model,
             max_tokens=512,
@@ -98,18 +98,16 @@ class AnthropicLLM:
             return Classification(intents=[Intent.OTHER], confidence=0.0, entities=Entities())
         return response.parsed_output
 
-    async def respond(self, history: Sequence[ChatMessage], facts: str) -> str:
-        response = await self._client.beta.messages.create(
+    async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
+        response = await self._client.messages.create(
             model=self._responder_model,
             max_tokens=1024,
             system=f"{RESPOND_SYSTEM}\n\n<facts>\n{facts}\n</facts>",
-            messages=[{"role": m.role, "content": m.content} for m in history],
+            messages=_to_params(history),
             output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
         )
         return "".join(block.text for block in response.content if block.type == "text")
 
 
-def _to_params(history: Sequence[ChatMessage]) -> list[MessageParam]:
+def _to_params(history: Sequence[ConversationMessage]) -> list[MessageParam]:
     return [{"role": m.role, "content": m.content} for m in history]

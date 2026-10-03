@@ -142,3 +142,16 @@ async def test_order_status_without_an_order_number_asks_for_it(
     reply = await ask(client, llm, "cus_ana", "cadê meu pedido?", None)
 
     assert "número do pedido" in reply
+
+
+async def test_status_mentioned_out_of_context_is_replaced(
+    client: AsyncClient, llm: ScriptedLLM
+) -> None:
+    # "enviado" appears in the facts only negated ("ainda não foi enviado").
+    hallucinated = "Seu pedido ORD-1003 já foi enviado e chega em 2 dias!"
+
+    reply = await ask(client, llm, "cus_ana", "o 1003 já saiu?", "1003", llm_reply=hallucinated)
+
+    assert "já foi enviado" not in reply
+    assert "2 dias" not in reply
+    assert "ainda não foi enviado" in reply

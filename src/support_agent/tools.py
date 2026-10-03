@@ -39,11 +39,14 @@ class ToolError(BaseModel):
     order_id: str | None = None
 
 
+TrackingErrorCode = Literal[ErrorCode.UPSTREAM_UNAVAILABLE, ErrorCode.TRACKING_NOT_FOUND]
+
+
 class ShipmentInfo(BaseModel):
     tracking_code: str
     carrier: str
     tracking: Tracking | None
-    tracking_error: Literal[ErrorCode.UPSTREAM_UNAVAILABLE, ErrorCode.TRACKING_NOT_FOUND] | None
+    tracking_error: TrackingErrorCode | None
 
 
 class OrderStatusResult(BaseModel):
@@ -104,9 +107,7 @@ async def get_order_status(
     shipment_info = None
     if shipment is not None:
         tracking: Tracking | None = None
-        tracking_error: (
-            Literal[ErrorCode.UPSTREAM_UNAVAILABLE, ErrorCode.TRACKING_NOT_FOUND] | None
-        ) = None
+        tracking_error: TrackingErrorCode | None = None
         try:
             tracking = await deps.logistics.track(shipment.tracking_code)
         except TrackingNotFound:
