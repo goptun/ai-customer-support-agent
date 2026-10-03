@@ -51,7 +51,7 @@ A hand-off of a Conversation to an Attendant when the agent cannot or should not
 _Avoid_: Case, escalation
 
 **Audit Log**:
-The append-only record of every side effect (Cancellation, Refund, Approval decision, Ticket), with actor, action, inputs, result and timestamp.
+The append-only record of every side effect (Cancellation, Refund, Approval Request decision, Ticket), with actor, action, inputs, result and timestamp.
 _Avoid_: History, event log
 
 ### Conversation
