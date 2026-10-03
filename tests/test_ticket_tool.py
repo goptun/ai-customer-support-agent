@@ -22,7 +22,7 @@ from support_agent.tools import (
     create_support_ticket,
 )
 
-from .fakes import lexical_knowledge_base
+from .fakes import lexical_knowledge_base, refunds
 
 ANA = "cus_ana"
 
@@ -39,6 +39,7 @@ def deps(engine: AsyncEngine) -> ToolDeps:
         ),
         tickets=Tickets(sessions),
         cancellations=Cancellations(sessions),
+        refunds=refunds(sessions),
         knowledge_base=lexical_knowledge_base(sessions),
         today=ANCHOR.date,
     )

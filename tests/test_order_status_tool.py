@@ -18,7 +18,7 @@ from support_agent.tools import (
     get_order_status,
 )
 
-from .fakes import lexical_knowledge_base
+from .fakes import lexical_knowledge_base, refunds
 
 ANA = "cus_ana"
 TODAY = ANCHOR.date()
@@ -57,6 +57,7 @@ def deps(engine: AsyncEngine, handler: Handler) -> ToolDeps:
         logistics=LogisticsClient(http, timeout_seconds=0.5),
         tickets=Tickets(sessions),
         cancellations=Cancellations(sessions),
+        refunds=refunds(sessions),
         knowledge_base=lexical_knowledge_base(sessions),
         today=lambda: TODAY,
     )

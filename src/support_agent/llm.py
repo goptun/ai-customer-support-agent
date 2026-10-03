@@ -40,6 +40,10 @@ class Entities(BaseModel):
     requested_amount_cents: int | None = Field(
         default=None, description="Refund amount the Customer asked for, in cents, if any"
     )
+    asks_refund_status: bool = Field(
+        default=False,
+        description="True if the Customer asks how a refund already requested is going",
+    )
     wants_human: bool = Field(
         default=False, description="True if the Customer asks to talk to a human"
     )

@@ -62,7 +62,7 @@ class CancellationResult(BaseModel):
     refund: RefundSummary | None
 
 
-async def _prior_refunds_cents(session: AsyncSession, order_id: str) -> int:
+async def prior_refunds_cents(session: AsyncSession, order_id: str) -> int:
     total = await session.scalar(
         select(func.coalesce(func.sum(Refund.amount_cents), 0)).where(
             Refund.order_id == order_id, Refund.status != RefundStatus.REJECTED
@@ -78,7 +78,7 @@ class Cancellations:
     async def preview(self, order: Order) -> CancellationPlan | CancellationRefusal:
         """What cancelling the Order now would do; changes nothing."""
         async with self._sessions() as session:
-            prior = await _prior_refunds_cents(session, order.id)
+            prior = await prior_refunds_cents(session, order.id)
         return decide_cancellation(order.status, order.total_paid_cents, prior)
 
     async def cancel(
@@ -102,7 +102,7 @@ class Cancellations:
                 return await _cancellation_result(session, existing)
 
             decision = decide_cancellation(
-                order.status, order.total_paid_cents, await _prior_refunds_cents(session, order_id)
+                order.status, order.total_paid_cents, await prior_refunds_cents(session, order_id)
             )
             if isinstance(decision, CancellationRefusal):
                 return decision

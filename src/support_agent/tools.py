@@ -25,6 +25,7 @@ from support_agent.knowledge import KnowledgeBase, PolicyExcerpt
 from support_agent.logistics import (
     CarrierUnavailable,
     LogisticsClient,
+    ShipmentStatus,
     Tracking,
     TrackingNotFound,
 )
@@ -37,6 +38,13 @@ from support_agent.models import (
     TicketReason,
 )
 from support_agent.orders import Orders
+from support_agent.refunds import (
+    RefundRecord,
+    RefundRefusal,
+    RefundRequest,
+    RefundRequested,
+    Refunds,
+)
 from support_agent.tickets import NewTicket, TicketResult, Tickets
 
 _ORDER_ID = re.compile(r"^(?:ORD-?|#)?(\d{1,12})$", re.IGNORECASE)
@@ -92,6 +100,23 @@ class KnowledgeBaseResult(BaseModel):
     chunks: list[PolicyExcerpt]  # best first; empty when the Knowledge Base doesn't cover it
 
 
+class RefundRefused(BaseModel):
+    """The Refund Policy found the Order not eligible; nothing was created."""
+
+    kind: Literal["refund_refused"] = "refund_refused"
+    order_id: str
+    reason: RefundRefusal
+    # The thresholds the decision used, so the explanation states the same ones.
+    delivery_window_days: int
+    late_after_days: int
+
+
+class RefundStatusResult(BaseModel):
+    kind: Literal["refund_status"] = "refund_status"
+    order_id: str | None  # None: all of the Customer's Refunds
+    refunds: list[RefundRecord]  # newest first
+
+
 class CancellationPreview(BaseModel):
     """What cancelling the Order now would do; shown to the Customer for confirmation."""
 
@@ -107,6 +132,7 @@ class ToolDeps:
     tickets: Tickets
     knowledge_base: KnowledgeBase
     cancellations: Cancellations
+    refunds: Refunds
     today: Callable[[], date]
 
 
@@ -132,6 +158,23 @@ class OrderIdArgs(BaseModel):
 class CancelOrderArgs(OrderIdArgs):
     # The Refund the Customer was shown and confirmed; anything else cancels nothing.
     expected_refund_cents: int = Field(ge=0)
+
+
+class CreateRefundArgs(OrderIdArgs):
+    # Only what the Customer asked for: the ceiling is computed from the Order's records.
+    amount_cents: int | None = Field(default=None, gt=0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class RefundStatusArgs(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    order_id: str | None = None
+
+    @field_validator("order_id")
+    @classmethod
+    def _normalize(cls, value: str | None) -> str | None:
+        return None if value is None else _normalize_order_id(value)
 
 
 class CreateSupportTicketArgs(BaseModel):
@@ -258,6 +301,70 @@ async def cancel_order(
     if isinstance(result, CancellationRefusal):
         return _refused(result, parsed.order_id)
     return result
+
+
+async def create_refund(
+    deps: ToolDeps, customer_id: str, conversation_id: uuid.UUID, args: Mapping[str, object]
+) -> RefundRequested | RefundRefused | ToolError:
+    """Request a Refund under the Refund Policy. Never issues money: an Attendant approves it."""
+    try:
+        parsed = CreateRefundArgs.model_validate(args)
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    found = await _owned_order(deps, customer_id, parsed.order_id)
+    if isinstance(found, ToolError):
+        return found
+    order, shipment = found
+
+    shipment_lost: bool | None = False
+    if order.status is OrderStatus.SHIPPED and shipment is not None:
+        # Only the carrier knows whether a Shipment on its way was lost.
+        try:
+            tracking = await deps.logistics.track(shipment.tracking_code)
+            shipment_lost = tracking.status is ShipmentStatus.LOST
+        except TrackingNotFound:
+            pass
+        except CarrierUnavailable:
+            shipment_lost = None
+
+    result = await deps.refunds.request(
+        RefundRequest(
+            order_id=parsed.order_id,
+            customer_id=customer_id,
+            conversation_id=conversation_id,
+            requested_cents=parsed.amount_cents,
+            reason=parsed.reason,
+            shipment_lost=shipment_lost,
+        ),
+        deps.today(),
+    )
+    if result is RefundRefusal.CARRIER_UNAVAILABLE:
+        return ToolError(code=ErrorCode.UPSTREAM_UNAVAILABLE, order_id=parsed.order_id)
+    if isinstance(result, RefundRefusal):
+        return RefundRefused(
+            order_id=parsed.order_id,
+            reason=result,
+            delivery_window_days=deps.refunds.policy.delivery_window_days,
+            late_after_days=deps.refunds.policy.late_after_days,
+        )
+    return result
+
+
+async def get_refund_status(
+    deps: ToolDeps, customer_id: str, args: Mapping[str, object]
+) -> RefundStatusResult | ToolError:
+    """The Customer's Refunds and their state, for one Order or all of them."""
+    try:
+        order_id = RefundStatusArgs.model_validate(args).order_id
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    if order_id is not None:
+        found = await _owned_order(deps, customer_id, order_id)
+        if isinstance(found, ToolError):
+            return found
+    return RefundStatusResult(
+        order_id=order_id, refunds=await deps.refunds.of_customer(customer_id, order_id)
+    )
 
 
 async def create_support_ticket(

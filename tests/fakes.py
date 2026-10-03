@@ -2,9 +2,13 @@ import math
 import re
 import zlib
 from collections.abc import Sequence
+from typing import Any
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from support_agent.approvals import ApprovalWorkflow, build_approval_graph
 from support_agent.knowledge import KnowledgeBase
 from support_agent.llm import (
     Classification,
@@ -14,6 +18,7 @@ from support_agent.llm import (
     Intent,
 )
 from support_agent.models import EMBEDDING_DIM
+from support_agent.refunds import RefundPolicy, Refunds
 
 
 def order_status(order_id: str | None = None) -> Classification:
@@ -25,6 +30,18 @@ def order_status(order_id: str | None = None) -> Classification:
 def cancel_order(order_id: str | None = None) -> Classification:
     return Classification(
         intents=[Intent.CANCEL_ORDER], confidence=0.95, entities=Entities(order_id=order_id)
+    )
+
+
+def refund(
+    order_id: str | None = None, amount_cents: int | None = None, *, status: bool = False
+) -> Classification:
+    return Classification(
+        intents=[Intent.REFUND],
+        confidence=0.95,
+        entities=Entities(
+            order_id=order_id, requested_amount_cents=amount_cents, asks_refund_status=status
+        ),
     )
 
 
@@ -67,6 +84,15 @@ class ScriptedLLM:
 
 def _last_customer_message(history: Sequence[ConversationMessage]) -> str:
     return next(m.content for m in reversed(history) if m.role == "user")
+
+
+def refunds(
+    sessions: async_sessionmaker[AsyncSession],
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
+) -> Refunds:
+    """Refunds under the default Refund Policy, approval workflows checkpointed in memory."""
+    workflow = ApprovalWorkflow(build_approval_graph(checkpointer or InMemorySaver()))
+    return Refunds(sessions, RefundPolicy(), workflow)
 
 
 class LexicalEmbedder:

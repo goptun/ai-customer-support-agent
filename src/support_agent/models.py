@@ -12,11 +12,13 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -59,6 +61,12 @@ class RefundStatus(enum.StrEnum):
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
     ISSUED = "issued"
+    REJECTED = "rejected"
+
+
+class ApprovalStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
     REJECTED = "rejected"
 
 
@@ -140,10 +148,19 @@ class Ticket(Base):
 
 class Refund(Base):
     __tablename__ = "refunds"
-    __table_args__ = (CheckConstraint("amount_cents > 0", name="ck_refunds_amount_positive"),)
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_refunds_amount_positive"),
+        # At most one Refund awaiting approval per Order: a repeated request finds it.
+        Index(
+            "uq_refunds_one_pending_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status = 'pending_approval'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    # cancel:{order_id} for a Cancellation's Refund; a repeat returns the original Refund
+    # cancel:{order_id} for a Cancellation's Refund, refund:{approval_request_id} otherwise
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
     amount_cents: Mapped[int] = mapped_column(BigInteger)
@@ -161,6 +178,26 @@ class Cancellation(Base):
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), unique=True)
     customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
     refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"))  # None: unpaid
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ApprovalRequest(Base):
+    """A Refund the Refund Policy found eligible, awaiting an Attendant's decision.
+
+    Its approval workflow runs on the graph thread `approval:{id}` (ADR-0002).
+    """
+
+    __tablename__ = "approval_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    refund_id: Mapped[int] = mapped_column(ForeignKey("refunds.id"), unique=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    # Where the decision is relayed to the Customer.
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    status: Mapped[ApprovalStatus] = mapped_column(_enum(ApprovalStatus, "approval_status"))
+    # The Refund Policy's result (ground, max, requested, capped), shown to the Attendant.
+    policy_result: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

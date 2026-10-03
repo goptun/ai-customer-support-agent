@@ -21,7 +21,7 @@ from support_agent.seed import ANCHOR
 from support_agent.tickets import Tickets
 from support_agent.tools import RetryPolicy, ToolDeps
 
-from .fakes import ScriptedLLM, lexical_knowledge_base, order_status
+from .fakes import ScriptedLLM, lexical_knowledge_base, order_status, refunds
 from .test_order_status_tool import tracking_json
 
 ANA = "cus_ana"
@@ -83,6 +83,7 @@ class Agent:
                     logistics=LogisticsClient(http, timeout_seconds=0.5),
                     tickets=Tickets(sessions),
                     cancellations=Cancellations(sessions),
+                    refunds=refunds(sessions),
                     knowledge_base=lexical_knowledge_base(sessions),
                     today=ANCHOR.date,
                 ),

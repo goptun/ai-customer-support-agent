@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     knowledge_top_k: int = 3
     # Cosine similarity below which a chunk doesn't answer the question (tuned on the seed).
     knowledge_min_score: float = 0.45
+    # Refund Policy: eligible if delivered at most this many days ago...
+    refund_delivery_window_days: int = 30
+    # ...or if the Shipment is more than this many days past its promised date.
+    refund_late_after_days: int = 10
 
     @property
     def checkpointer_url(self) -> str:

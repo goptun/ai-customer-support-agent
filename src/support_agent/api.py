@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from support_agent.approvals import ApprovalWorkflow, build_approval_graph
 from support_agent.auth import InvalidToken, Principal, Role, issue_token, verify_token
 from support_agent.cancellations import Cancellations
 from support_agent.config import Settings, get_settings
@@ -28,6 +29,7 @@ from support_agent.llm import LLM, AnthropicLLM
 from support_agent.logistics import LogisticsClient
 from support_agent.models import Customer, MessageRole
 from support_agent.orders import Orders
+from support_agent.refunds import RefundPolicy, Refunds
 from support_agent.tickets import Tickets
 from support_agent.tools import RetryPolicy, ToolDeps
 
@@ -108,6 +110,14 @@ def create_app(
                 ),
                 tickets=Tickets(app.state.sessions),
                 cancellations=Cancellations(app.state.sessions),
+                refunds=Refunds(
+                    app.state.sessions,
+                    RefundPolicy(
+                        delivery_window_days=settings.refund_delivery_window_days,
+                        late_after_days=settings.refund_late_after_days,
+                    ),
+                    ApprovalWorkflow(build_approval_graph(checkpointer)),
+                ),
                 knowledge_base=KnowledgeBase(
                     app.state.sessions,
                     embedder
