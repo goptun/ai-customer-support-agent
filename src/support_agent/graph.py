@@ -10,7 +10,7 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 
 
-class ChatState(TypedDict, total=False):
+class ConversationState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     intent: str
 
@@ -22,13 +22,13 @@ class Turn:
     pending_actions: list[dict[str, Any]] = field(default_factory=list)
 
 
-async def echo(state: ChatState) -> ChatState:
+async def echo(state: ConversationState) -> ConversationState:
     last = state["messages"][-1]
     return {"messages": [AIMessage(content=f"Você disse: {last.content}")], "intent": "other"}
 
 
 def build_graph(checkpointer: BaseCheckpointSaver[Any]) -> CompiledStateGraph[Any]:
-    builder = StateGraph(ChatState)
+    builder = StateGraph(ConversationState)
     builder.add_node("echo", echo)
     builder.add_edge(START, "echo")
     builder.add_edge("echo", END)

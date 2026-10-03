@@ -137,8 +137,7 @@ async def test_graph_checkpoints_each_conversation_in_postgres(
     first = str((await chat(client, headers, "conversa um"))["conversation_id"])
     second = str((await chat(client, headers, "conversa dois"))["conversation_id"])
 
-    conn_string = settings.database_url.replace("postgresql+psycopg://", "postgresql://")
-    async with AsyncPostgresSaver.from_conn_string(conn_string) as saver:
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpointer_url) as saver:
         one = await saver.aget_tuple({"configurable": {"thread_id": first}})
         two = await saver.aget_tuple({"configurable": {"thread_id": second}})
 
