@@ -138,11 +138,12 @@ async def test_grounded_llm_reply_is_kept(client: AsyncClient, llm: ScriptedLLM)
     assert reply == grounded
 
 
-async def test_order_status_without_an_order_number_asks_for_it(
+async def test_order_status_without_an_order_number_offers_recent_orders(
     client: AsyncClient, llm: ScriptedLLM
 ) -> None:
     reply = await ask(client, llm, "cus_ana", "cadê meu pedido?", None)
 
+    assert "ORD-1002" in reply
     assert "número do pedido" in reply
 
 

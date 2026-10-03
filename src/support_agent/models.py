@@ -29,6 +29,7 @@ class MessageRole(enum.StrEnum):
 class TicketReason(enum.StrEnum):
     CUSTOMER_REQUESTED = "customer_requested"
     TOOL_FAILURE = "tool_failure"
+    CLARIFICATION_FAILED = "clarification_failed"
 
 
 class TicketPriority(enum.StrEnum):

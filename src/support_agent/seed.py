@@ -30,6 +30,7 @@ CUSTOMERS: list[dict[str, Any]] = [
     {"id": "cus_ana", "name": "Ana Souza", "email": "ana.souza@example.com"},
     {"id": "cus_bruno", "name": "Bruno Lima", "email": "bruno.lima@example.com"},
     {"id": "cus_carla", "name": "Carla Mendes", "email": "carla.mendes@example.com"},
+    {"id": "cus_diego", "name": "Diego Alves", "email": "diego.alves@example.com"},
 ]
 
 ORDERS: list[dict[str, Any]] = [
@@ -161,6 +162,17 @@ ORDERS: list[dict[str, Any]] = [
         "total_paid_cents": 13900,
         "placed_at": _at(-4),
         "promised_delivery_date": _on(4),
+        "delivered_at": None,
+    },
+    # Diego's only Order: the single-recent-Order case.
+    {
+        "id": "ORD-4001",
+        "customer_id": "cus_diego",
+        "status": OrderStatus.PROCESSING,
+        "items": [{"sku": "LUMINARIA", "name": "Luminária LED", "qty": 1, "unit_cents": 8990}],
+        "total_paid_cents": 8990,
+        "placed_at": _at(-2),
+        "promised_delivery_date": _on(5),
         "delivered_at": None,
     },
 ]

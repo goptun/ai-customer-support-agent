@@ -9,8 +9,10 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from support_agent.llm import Intent
 from support_agent.logistics import ShipmentStatus
 from support_agent.models import OrderStatus, TicketReason
+from support_agent.orders import OrderSummary
 from support_agent.tickets import TicketResult
 from support_agent.tools import ErrorCode, OrderStatusResult, ToolError
 
@@ -19,9 +21,23 @@ ASK_ORDER_ID = (
     "confirmação da compra (por exemplo, ORD-1002)."
 )
 CAPABILITIES = (
-    "Por enquanto consigo te ajudar a acompanhar seus pedidos: me diga o número do pedido "
-    "e eu verifico o status e a entrega."
+    "Sou o assistente de atendimento da loja. Por enquanto consigo te ajudar a acompanhar "
+    "seus pedidos: me diga o número do pedido e eu verifico o status e a entrega. Se "
+    "preferir, também posso te passar para um atendente."
 )
+CLARIFICATION = (
+    "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? "
+    "Por exemplo: saber onde está um pedido."
+)
+
+# How a queued Intent is announced: "Também vi que você quer {label}."
+INTENT_LABELS = {
+    Intent.ORDER_STATUS: "saber o status do pedido",
+    Intent.CANCEL_ORDER: "cancelar um pedido",
+    Intent.REFUND: "um reembolso",
+    Intent.FAQ: "tirar uma dúvida sobre as políticas da loja",
+    Intent.OTHER: "outra coisa",
+}
 
 # Escalation must never leave the Customer without a way forward, even if the Ticket fails.
 TICKET_FAILED = (
@@ -70,10 +86,39 @@ def render_ticket(ticket: TicketResult) -> str:
     )
     if ticket.reason is TicketReason.CUSTOMER_REQUESTED:
         return f"Combinado, vou te passar para um atendente. {next_steps}"
+    if ticket.reason is TicketReason.CLARIFICATION_FAILED:
+        return (
+            "Desculpe, não consegui entender o que você precisa, então vou te passar para um "
+            f"atendente. {next_steps}"
+        )
     return (
         "Nossos sistemas estão instáveis e não consegui concluir a consulta, então vou te "
         f"passar para um atendente. {next_steps}"
     )
+
+
+def render_recent_orders(orders: list[OrderSummary]) -> str:
+    lines = [
+        f"- {order.order_id}, feito em {_format_date(order.placed_at)}: "
+        f"{ORDER_STATUS_LABELS[order.status]}"
+        for order in orders
+    ]
+    return "\n".join(
+        [
+            "Encontrei estes pedidos recentes seus:",
+            *lines,
+            "Qual deles você quer consultar? Se for outro, me diga o número do pedido.",
+        ]
+    )
+
+
+def render_single_recent_order(order_id: str) -> str:
+    return f"Encontrei um pedido recente seu, o {order_id}."
+
+
+def render_queued(intents: list[Intent]) -> str:
+    wants = " e ".join(INTENT_LABELS[intent] for intent in intents)
+    return f"Também vi que você quer {wants}. É só me responder que eu sigo com isso em seguida."
 
 
 @dataclass(frozen=True)

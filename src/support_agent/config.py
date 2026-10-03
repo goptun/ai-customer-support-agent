@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     tool_retries: int = 2
     tool_retry_backoff_seconds: float = 0.5
     tool_failures_before_escalation: int = 2
+    clarification_confidence: float = 0.7
+    clarifications_before_escalation: int = 2
+    recent_order_days: int = 30
+    recent_orders_limit: int = 5
 
     @property
     def checkpointer_url(self) -> str:

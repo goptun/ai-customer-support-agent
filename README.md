@@ -9,7 +9,7 @@ cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET and ANTHROPIC_API_KEY
 docker compose up -d --build
 ```
 
-Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`) and Orders.
+Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`, and `cus_diego` with a single recent Order) and Orders.
 
 ```sh
 TOKEN=$(curl -s -X POST localhost:8003/auth/dev-token \

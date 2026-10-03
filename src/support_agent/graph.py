@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, time, timedelta
 from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
@@ -14,13 +15,18 @@ from pydantic import TypeAdapter
 
 from support_agent.llm import LLM, ConversationMessage, Intent
 from support_agent.models import TicketPriority, TicketReason
+from support_agent.orders import OrderSummary
 from support_agent.replies import (
     ASK_ORDER_ID,
     CAPABILITIES,
+    CLARIFICATION,
     TICKET_FAILED,
     is_grounded,
     render_error,
     render_order_status,
+    render_queued,
+    render_recent_orders,
+    render_single_recent_order,
     render_ticket,
 )
 from support_agent.tickets import TicketResult
@@ -37,14 +43,21 @@ from support_agent.tools import (
 
 ToolResult = OrderStatusResult | ToolError
 _tool_result = TypeAdapter[ToolResult](ToolResult)
+_order_summaries = TypeAdapter(list[OrderSummary])
 _ticket_result = TypeAdapter[TicketResult | ToolError](TicketResult | ToolError)
 
 PRIORITY = {
     TicketReason.CUSTOMER_REQUESTED: TicketPriority.NORMAL,
     TicketReason.TOOL_FAILURE: TicketPriority.HIGH,
+    TicketReason.CLARIFICATION_FAILED: TicketPriority.NORMAL,
 }
 SUMMARY_MESSAGES = 5
 SUMMARY_MESSAGE_CHARS = 300  # keeps the summary within the tool's length limit
+
+
+class QueuedIntent(TypedDict):
+    intent: str
+    order_id: str | None  # as the Customer wrote it alongside the Intent
 
 
 class ConversationState(TypedDict, total=False):
@@ -55,9 +68,14 @@ class ConversationState(TypedDict, total=False):
     tool_result: dict[str, Any] | None
     escalation: str | None  # TicketReason
     ticket: dict[str, Any] | None
+    needs_clarification: bool  # not confident enough to act: ask instead
+    recent_orders: list[dict[str, Any]] | None  # no Order given or focused: the ones to offer
+    single_recent_order: bool  # order_id was taken from the Customer's only recent Order
     # Carried across turns.
     focused_order_id: str | None  # last Order whose ownership a tool verified
     tool_failures: dict[str, int]  # failed calls per tool in this Conversation
+    clarifications: int  # consecutive Clarifications asked
+    queued_intents: list[QueuedIntent]  # raised but not handled yet, oldest first
 
 
 @dataclass(frozen=True)
@@ -75,6 +93,10 @@ class AgentDeps:
     history_window: int = 20
     retry: RetryPolicy = field(default_factory=RetryPolicy)
     failures_before_escalation: int = 2
+    clarification_confidence: float = 0.7
+    clarifications_before_escalation: int = 2
+    recent_order_days: int = 30
+    recent_orders_limit: int = 5
 
 
 @dataclass(frozen=True)
@@ -94,11 +116,11 @@ def _history(state: ConversationState, window: int) -> list[ConversationMessage]
 
 
 def _ticket_summary(state: ConversationState, reason: TicketReason, tool: str | None) -> str:
-    why = (
-        "o Customer pediu atendimento humano"
-        if reason is TicketReason.CUSTOMER_REQUESTED
-        else f"falhas repetidas na ferramenta {tool}"
-    )
+    why = {
+        TicketReason.CUSTOMER_REQUESTED: "o Customer pediu atendimento humano",
+        TicketReason.TOOL_FAILURE: f"falhas repetidas na ferramenta {tool}",
+        TicketReason.CLARIFICATION_FAILED: "o agente não entendeu o pedido após Clarifications",
+    }[reason]
     said = [m.text for m in state["messages"] if isinstance(m, HumanMessage)]
     return "\n".join(
         [
@@ -116,22 +138,69 @@ def build_graph(
 ) -> CompiledStateGraph[Any, RunContext]:
     async def classify_intent(state: ConversationState) -> ConversationState:
         classification = await deps.llm.classify(_history(state, deps.history_window))
-        return {
-            "intent": classification.intents[0].value,
-            "order_id": classification.entities.order_id,
+        # Small talk next to a real request is not a request of its own.
+        raised: list[Intent] = [i for i in classification.intents if i is not Intent.OTHER] or [
+            Intent.OTHER
+        ]
+        order_id = classification.entities.order_id
+        queued = list(state.get("queued_intents") or [])
+        update: ConversationState = {
+            "intent": raised[0].value,
+            "order_id": order_id,
             "tool_result": None,
             "ticket": None,
-            # Wants-human goes straight to a Ticket: no retention attempt.
-            "escalation": (
-                TicketReason.CUSTOMER_REQUESTED.value
-                if classification.entities.wants_human
-                else None
-            ),
+            "escalation": None,
+            "needs_clarification": False,
+            "recent_orders": None,
+            "single_recent_order": False,
         }
+        if classification.entities.wants_human:
+            # Straight to a Ticket: no retention attempt. Understood, so no failed Clarification.
+            update["escalation"] = TicketReason.CUSTOMER_REQUESTED.value
+            update["clarifications"] = 0
+            return update
 
-    async def resolve_context(state: ConversationState) -> ConversationState:
-        # Only an explicit order id for now; Focused Order and listing come later.
-        return {}
+        if classification.confidence < deps.clarification_confidence:
+            asked = state.get("clarifications", 0)
+            if asked >= deps.clarifications_before_escalation:
+                update["escalation"] = TicketReason.CLARIFICATION_FAILED.value
+                update["clarifications"] = 0
+            else:
+                update["needs_clarification"] = True
+                update["clarifications"] = asked + 1
+            return update
+
+        update["clarifications"] = 0
+        if raised == [Intent.OTHER] and queued:
+            # Nothing new asked: carry on with what the Customer raised earlier.
+            resumed = queued.pop(0)
+            update["intent"], update["order_id"] = resumed["intent"], resumed["order_id"]
+        else:
+            handled = raised[0].value
+            queued = [item for item in queued if item["intent"] != handled]
+            for intent in raised[1:]:
+                if intent.value not in {handled, *(item["intent"] for item in queued)}:
+                    queued.append(QueuedIntent(intent=intent.value, order_id=order_id))
+        update["queued_intents"] = queued
+        return update
+
+    async def resolve_context(
+        state: ConversationState, runtime: Runtime[RunContext]
+    ) -> ConversationState:
+        # Explicit order id (ownership checked by the tool) > Focused Order > recent Orders.
+        if state.get("order_id"):
+            return {}
+        if state.get("focused_order_id"):
+            return {"order_id": state["focused_order_id"]}
+        since = datetime.combine(
+            deps.tools.today() - timedelta(days=deps.recent_order_days), time.min, UTC
+        )
+        recent = await deps.tools.orders.recent(
+            runtime.context.customer_id, since, deps.recent_orders_limit
+        )
+        if len(recent) == 1:
+            return {"order_id": recent[0].order_id, "single_recent_order": True}
+        return {"recent_orders": [order.model_dump(mode="json") for order in recent]}
 
     async def act(state: ConversationState, runtime: Runtime[RunContext]) -> ConversationState:
         result = await call_with_retry(
@@ -176,10 +245,29 @@ def build_graph(
         if state.get("ticket") is not None:
             ticket = _ticket_result.validate_python(state["ticket"])
             return TICKET_FAILED if isinstance(ticket, ToolError) else render_ticket(ticket)
+        if state.get("needs_clarification"):
+            return CLARIFICATION
+        answer = await _answer(state)
+        queued = state.get("queued_intents") or []
+        if not queued:
+            return answer
+        return f"{answer}\n\n{render_queued([Intent(item['intent']) for item in queued])}"
+
+    async def _answer(state: ConversationState) -> str:
         if state["intent"] != Intent.ORDER_STATUS:
             return CAPABILITIES
         if state.get("tool_result") is None:
-            return ASK_ORDER_ID
+            offered = state.get("recent_orders")
+            if not offered:
+                return ASK_ORDER_ID
+            return render_recent_orders(_order_summaries.validate_python(offered))
+        reply = await _order_status_reply(state)
+        order_id = state.get("order_id")
+        if state.get("single_recent_order") and order_id:
+            return f"{render_single_recent_order(order_id)}\n{reply}"
+        return reply
+
+    async def _order_status_reply(state: ConversationState) -> str:
         result = _tool_result.validate_python(state["tool_result"])
         if isinstance(result, ToolError):
             return render_error(result)
@@ -192,7 +280,9 @@ def build_graph(
     ) -> Literal["escalate", "resolve_context", "respond"]:
         if state.get("escalation"):
             return "escalate"
-        return "resolve_context" if state["intent"] == Intent.ORDER_STATUS else "respond"
+        if state.get("needs_clarification") or state["intent"] != Intent.ORDER_STATUS:
+            return "respond"
+        return "resolve_context"
 
     def after_resolve(state: ConversationState) -> Literal["act", "respond"]:
         return "act" if state.get("order_id") else "respond"

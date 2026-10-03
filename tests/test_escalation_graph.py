@@ -88,8 +88,8 @@ class Agent:
             await session.flush()
             return conversation.id
 
-    async def say(self, conversation_id: uuid.UUID, message: str) -> str:
-        return (await run_turn(self.graph, conversation_id, ANA, message)).reply
+    async def say(self, conversation_id: uuid.UUID, message: str, customer_id: str = ANA) -> str:
+        return (await run_turn(self.graph, conversation_id, customer_id, message)).reply
 
     async def tickets(self, conversation_id: uuid.UUID) -> list[Ticket]:
         async with session_factory(self.engine)() as session:

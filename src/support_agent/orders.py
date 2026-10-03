@@ -1,9 +1,18 @@
 """Thin read repository for Orders and their Shipment."""
 
+from datetime import datetime
+
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from support_agent.models import Order, Shipment
+from support_agent.models import Order, OrderStatus, Shipment
+
+
+class OrderSummary(BaseModel):
+    order_id: str
+    placed_at: datetime
+    status: OrderStatus
 
 
 class Orders:
@@ -23,3 +32,19 @@ class Orders:
             return None
         order, shipment = row
         return order, shipment
+
+    async def recent(self, customer_id: str, since: datetime, limit: int) -> list[OrderSummary]:
+        """The Customer's Orders placed since `since`, newest first."""
+        async with self._sessions() as session:
+            orders = (
+                await session.scalars(
+                    select(Order)
+                    .where(Order.customer_id == customer_id, Order.placed_at >= since)
+                    .order_by(Order.placed_at.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return [
+            OrderSummary(order_id=order.id, placed_at=order.placed_at, status=order.status)
+            for order in orders
+        ]

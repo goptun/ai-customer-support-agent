@@ -116,6 +116,10 @@ def create_app(
                         backoff_seconds=settings.tool_retry_backoff_seconds,
                     ),
                     failures_before_escalation=settings.tool_failures_before_escalation,
+                    clarification_confidence=settings.clarification_confidence,
+                    clarifications_before_escalation=settings.clarifications_before_escalation,
+                    recent_order_days=settings.recent_order_days,
+                    recent_orders_limit=settings.recent_orders_limit,
                 ),
             )
             yield
