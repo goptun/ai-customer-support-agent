@@ -17,9 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from support_agent.models import EMBEDDING_DIM, KnowledgeChunk
-
-__all__ = ["EMBEDDING_DIM"]
+from support_agent.models import KnowledgeChunk
 
 POLICIES_DIR = Path(__file__).parent / "policies"
 

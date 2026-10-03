@@ -188,7 +188,7 @@ def build_graph(
             # Nothing new asked: carry on with what the Customer raised earlier.
             resumed = queued.pop(0)
             update["intent"], update["order_id"] = resumed["intent"], resumed["order_id"]
-            update["query"] = resumed["message"]
+            update["query"] = resumed.get("message", message)  # absent in older checkpoints
         else:
             handled = raised[0].value
             queued = [item for item in queued if item["intent"] != handled]

@@ -5,7 +5,6 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from support_agent.db import session_factory
-from support_agent.knowledge import KnowledgeBase
 from support_agent.logistics import LogisticsClient, ShipmentStatus
 from support_agent.orders import Orders
 from support_agent.seed import ANCHOR
@@ -18,8 +17,7 @@ from support_agent.tools import (
     get_order_status,
 )
 
-from .conftest import KNOWLEDGE_MIN_SCORE
-from .fakes import LexicalEmbedder
+from .fakes import lexical_knowledge_base
 
 ANA = "cus_ana"
 TODAY = ANCHOR.date()
@@ -57,9 +55,7 @@ def deps(engine: AsyncEngine, handler: Handler) -> ToolDeps:
         orders=Orders(sessions),
         logistics=LogisticsClient(http, timeout_seconds=0.5),
         tickets=Tickets(sessions),
-        knowledge_base=KnowledgeBase(
-            sessions, LexicalEmbedder(), top_k=3, min_score=KNOWLEDGE_MIN_SCORE
-        ),
+        knowledge_base=lexical_knowledge_base(sessions),
         today=lambda: TODAY,
     )
 

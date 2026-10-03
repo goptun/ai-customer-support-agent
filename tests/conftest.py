@@ -15,10 +15,9 @@ from support_agent.knowledge import index_policies, load_policies
 from support_agent.logistics_mock import create_app as create_logistics_mock
 from support_agent.seed import ANCHOR, seed
 
-from .fakes import LexicalEmbedder, ScriptedLLM
+from .fakes import KNOWLEDGE_MIN_SCORE, LexicalEmbedder, ScriptedLLM
 
 TEST_JWT_SECRET = "test-secret-with-enough-length-for-hs256"
-KNOWLEDGE_MIN_SCORE = 0.3  # for LexicalEmbedder; the real model's threshold is tuned in eval
 
 
 @pytest.fixture(scope="session")

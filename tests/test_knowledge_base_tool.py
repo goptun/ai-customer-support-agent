@@ -16,14 +16,11 @@ from support_agent.tools import (
     search_knowledge_base,
 )
 
-from .conftest import KNOWLEDGE_MIN_SCORE
-from .fakes import LexicalEmbedder
+from .fakes import LexicalEmbedder, lexical_knowledge_base
 
 
 def knowledge_base(engine: AsyncEngine) -> KnowledgeBase:
-    return KnowledgeBase(
-        session_factory(engine), LexicalEmbedder(), top_k=3, min_score=KNOWLEDGE_MIN_SCORE
-    )
+    return lexical_knowledge_base(session_factory(engine))
 
 
 async def indexed(engine: AsyncEngine) -> list[tuple[str, int, str]]:

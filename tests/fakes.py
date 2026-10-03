@@ -3,8 +3,11 @@ import re
 import zlib
 from collections.abc import Sequence
 
-from support_agent.knowledge import EMBEDDING_DIM
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from support_agent.knowledge import KnowledgeBase
 from support_agent.llm import Classification, ConversationMessage, Entities, Intent
+from support_agent.models import EMBEDDING_DIM
 
 
 def order_status(order_id: str | None = None) -> Classification:
@@ -63,6 +66,14 @@ class LexicalEmbedder:
 
     def embed_query(self, text: str) -> list[float]:
         return _bag_of_stems(text)
+
+
+# The threshold for LexicalEmbedder scores; the real model's is a setting.
+KNOWLEDGE_MIN_SCORE = 0.3
+
+
+def lexical_knowledge_base(sessions: async_sessionmaker[AsyncSession]) -> KnowledgeBase:
+    return KnowledgeBase(sessions, LexicalEmbedder(), top_k=3, min_score=KNOWLEDGE_MIN_SCORE)
 
 
 def _bag_of_stems(text: str) -> list[float]:
