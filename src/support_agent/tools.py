@@ -160,10 +160,13 @@ class CancelOrderArgs(OrderIdArgs):
     expected_refund_cents: int = Field(ge=0)
 
 
+REFUND_REASON_CHARS = 1000
+
+
 class CreateRefundArgs(OrderIdArgs):
     # Only what the Customer asked for: the ceiling is computed from the Order's records.
     amount_cents: int | None = Field(default=None, gt=0)
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: str = Field(min_length=1, max_length=REFUND_REASON_CHARS)
 
 
 class RefundStatusArgs(BaseModel):

@@ -12,13 +12,13 @@ from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from support_agent import audit
 from support_agent.approvals import ApprovalPause, ApprovalWorkflow
-from support_agent.cancellations import prior_refunds_cents
 from support_agent.models import (
+    NOT_DISPATCHED,
     ActorType,
     ApprovalRequest,
     ApprovalStatus,
@@ -27,8 +27,6 @@ from support_agent.models import (
     Refund,
     RefundStatus,
 )
-
-NOT_DISPATCHED = frozenset({OrderStatus.PENDING_PAYMENT, OrderStatus.PAID, OrderStatus.PROCESSING})
 
 
 @dataclass(frozen=True)
@@ -144,6 +142,16 @@ class RefundRequest:
     requested_cents: int | None
     reason: str
     shipment_lost: bool | None  # as the carrier reports it; None if it couldn't be reached
+
+
+async def prior_refunds_cents(session: AsyncSession, order_id: str) -> int:
+    """What the Order's Refunds already add up to; rejected ones don't count."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(Refund.amount_cents), 0)).where(
+            Refund.order_id == order_id, Refund.status != RefundStatus.REJECTED
+        )
+    )
+    return int(total or 0)
 
 
 def idempotency_key(approval_request_id: uuid.UUID) -> str:
@@ -281,14 +289,14 @@ async def _requested(
 ) -> RefundRequested:
     refund = await session.get(Refund, approval.refund_id)
     assert refund is not None
-    policy = approval.policy_result
+    decided = approval.policy_result
     return RefundRequested(
         order_id=refund.order_id,
         refund_id=refund.id,
         approval_request_id=approval.id,
         amount_cents=refund.amount_cents,
-        max_cents=policy["max_cents"],
-        requested_cents=policy["requested_cents"],
-        capped=policy["capped"],
+        max_cents=decided["max_cents"],
+        requested_cents=decided["requested_cents"],
+        capped=decided["capped"],
         already_pending=already_pending,
     )

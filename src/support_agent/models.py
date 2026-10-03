@@ -40,6 +40,10 @@ class OrderStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+# Dispatched = handed to the carrier; before that an Order can still be Cancelled.
+NOT_DISPATCHED = frozenset({OrderStatus.PENDING_PAYMENT, OrderStatus.PAID, OrderStatus.PROCESSING})
+
+
 class MessageRole(enum.StrEnum):
     CUSTOMER = "customer"
     AGENT = "agent"

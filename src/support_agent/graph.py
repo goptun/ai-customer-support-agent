@@ -56,6 +56,7 @@ from support_agent.replies import (
 )
 from support_agent.tickets import TicketResult
 from support_agent.tools import (
+    REFUND_REASON_CHARS,
     CancellationPreview,
     ErrorCode,
     KnowledgeBaseResult,
@@ -87,7 +88,6 @@ _cancellation_preview = TypeAdapter(CancellationPreview)
 _RefundToolResult = RefundRequested | RefundRefused | RefundStatusResult | ToolError
 _refund_result = TypeAdapter[_RefundToolResult](_RefundToolResult)
 ORDER_INTENTS = frozenset({Intent.ORDER_STATUS, Intent.CANCEL_ORDER, Intent.REFUND})
-REFUND_REASON_CHARS = 1000  # the tool's limit on a Refund's reason
 # Refusals that still prove the Order exists and is the Customer's.
 OWNED_ORDER_ERRORS = frozenset({ErrorCode.ALREADY_DISPATCHED, ErrorCode.ALREADY_CANCELLED})
 

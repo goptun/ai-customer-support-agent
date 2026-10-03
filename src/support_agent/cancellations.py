@@ -9,14 +9,23 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from support_agent import audit
-from support_agent.models import ActorType, Cancellation, Order, OrderStatus, Refund, RefundStatus
+from support_agent.models import (
+    NOT_DISPATCHED,
+    ActorType,
+    Cancellation,
+    Order,
+    OrderStatus,
+    Refund,
+    RefundStatus,
+)
+from support_agent.refunds import prior_refunds_cents
 
-CANCELLABLE = frozenset({OrderStatus.PENDING_PAYMENT, OrderStatus.PAID, OrderStatus.PROCESSING})
+CANCELLABLE = NOT_DISPATCHED
 PAID_STATUSES = frozenset({OrderStatus.PAID, OrderStatus.PROCESSING})
 REFUND_REASON = "Cancelamento do pedido antes do envio"
 
@@ -60,15 +69,6 @@ class CancellationResult(BaseModel):
     kind: Literal["cancellation"] = "cancellation"
     order_id: str
     refund: RefundSummary | None
-
-
-async def prior_refunds_cents(session: AsyncSession, order_id: str) -> int:
-    total = await session.scalar(
-        select(func.coalesce(func.sum(Refund.amount_cents), 0)).where(
-            Refund.order_id == order_id, Refund.status != RefundStatus.REJECTED
-        )
-    )
-    return int(total or 0)
 
 
 class Cancellations:

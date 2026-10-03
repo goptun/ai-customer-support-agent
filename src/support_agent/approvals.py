@@ -5,7 +5,7 @@ it waits, and is checkpointed in Postgres so the wait survives restarts (ADR-000
 """
 
 import uuid
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -18,7 +18,7 @@ from pydantic import BaseModel
 class ApprovalPause(BaseModel):
     """What the paused workflow waits on; the interrupt's value."""
 
-    type: str = "approve_refund"
+    type: Literal["approve_refund"] = "approve_refund"
     approval_request_id: uuid.UUID
     refund_id: int
     order_id: str
@@ -52,13 +52,21 @@ class ApprovalWorkflow:
         self._graph = graph
 
     async def start(self, pause: ApprovalPause) -> None:
-        """Run the workflow up to its pause; a workflow already started is left as is."""
+        """Run the workflow up to its pause; one already paused is left as is.
+
+        One that a crash stopped before its pause runs on from its last checkpoint.
+        """
         config: RunnableConfig = {
             "configurable": {"thread_id": approval_thread_id(pause.approval_request_id)}
         }
-        if (await self._graph.aget_state(config)).values:
+        state = await self._graph.aget_state(config)
+        if state.interrupts:
             return
-        await self._graph.ainvoke({"request": pause.model_dump(mode="json")}, config=config)
+        if state.next:
+            await self._graph.ainvoke(None, config=config)
+            return
+        if not state.values:
+            await self._graph.ainvoke({"request": pause.model_dump(mode="json")}, config=config)
 
     async def pending(self, approval_request_id: uuid.UUID) -> ApprovalPause | None:
         """What the workflow is paused on, or None if it isn't paused."""

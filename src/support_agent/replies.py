@@ -193,8 +193,9 @@ def render_refund_requested(result: RefundRequested) -> str:
     if result.already_pending:
         return (
             f"O pedido {result.order_id} já tem um reembolso de {amount} aguardando aprovação "
-            f"de um atendente (reembolso #{result.refund_id}), então não abri outro. Você pode "
-            "me perguntar o status do reembolso quando quiser."
+            f"de um atendente (reembolso #{result.refund_id}), então não abri outro nem mudei "
+            "o valor dele. Você pode me perguntar o status do reembolso quando quiser; se "
+            "precisar de outro valor, posso abrir um chamado para um atendente."
         )
     maximum = _format_money(result.max_cents)
     if result.capped and result.requested_cents is not None:
