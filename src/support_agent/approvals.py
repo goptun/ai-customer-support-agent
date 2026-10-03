@@ -17,6 +17,8 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
+from support_agent.models import ApprovalStatus, RefundStatus
+
 
 class ApprovalPause(BaseModel):
     """What the paused workflow waits on; the interrupt's value."""
@@ -34,6 +36,14 @@ class ApprovalDecision(BaseModel):
     approved: bool
     attendant_id: str
     reason: str | None
+
+    @property
+    def status(self) -> ApprovalStatus:
+        return ApprovalStatus.APPROVED if self.approved else ApprovalStatus.REJECTED
+
+    @property
+    def refund_status(self) -> RefundStatus:
+        return RefundStatus.APPROVED if self.approved else RefundStatus.REJECTED
 
 
 class ApprovalState(TypedDict, total=False):

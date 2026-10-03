@@ -66,4 +66,4 @@ async def test_a_decision_left_unsettled_by_a_crash_is_settled_at_startup(
     relayed = [m for m in await stored_messages(engine, str(conversation_id)) if m[0] == "agent"]
     assert len(relayed) == 1 and "aprovado" in relayed[0][1]
     actions = [entry.action for entry in await audit_of(engine, order_id)]
-    assert actions == ["create_refund", "decide_approval", "issue_refund"]
+    assert actions == ["create_refund", "decide_approval_request", "issue_refund"]

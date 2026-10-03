@@ -13,7 +13,7 @@ from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from support_agent import audit
@@ -36,15 +36,15 @@ from support_agent.models import (
 from support_agent.replies import render_refund_decision
 
 
-class ApprovalNotFound(Exception):
-    pass
+class ApprovalRequestNotFound(Exception):
+    """No Approval Request has that id."""
 
 
 class AlreadyDecided(Exception):
     """The Approval Request was decided before; nothing was changed."""
 
 
-class ApprovalView(BaseModel):
+class ApprovalRequestView(BaseModel):
     """An Approval Request as the Attendant sees it."""
 
     approval_request_id: uuid.UUID
@@ -53,7 +53,7 @@ class ApprovalView(BaseModel):
     customer_id: str
     refund_id: int
     amount_cents: int
-    reason: str  # the Customer's, for the Refund
+    refund_reason: str  # the Customer's
     refund_status: RefundStatus
     policy_result: dict[str, Any]
     created_at: datetime
@@ -73,13 +73,12 @@ class Decisions:
         self._conversations = conversations
         self.workflow = ApprovalWorkflow(build_approval_graph(checkpointer, self.settle))
 
-    async def in_status(self, status: ApprovalStatus) -> list[ApprovalView]:
+    async def in_status(self, status: ApprovalStatus) -> list[ApprovalRequestView]:
         """Approval Requests in that status, oldest first."""
         async with self._sessions() as session:
             rows = (
                 await session.execute(
-                    select(ApprovalRequest, Refund)
-                    .join(Refund, Refund.id == ApprovalRequest.refund_id)
+                    _with_refund()
                     .where(ApprovalRequest.status == status)
                     .order_by(ApprovalRequest.created_at, ApprovalRequest.id)
                 )
@@ -88,29 +87,27 @@ class Decisions:
 
     async def decide(
         self, approval_request_id: uuid.UUID, decision: ApprovalDecision
-    ) -> ApprovalView:
+    ) -> ApprovalRequestView:
         """Record the decision and resume the paused workflow, which settles it."""
         async with self._sessions.begin() as session:
             # The row lock serialises concurrent decisions: the second one sees the first.
             approval = await session.get(ApprovalRequest, approval_request_id, with_for_update=True)
             if approval is None:
-                raise ApprovalNotFound
+                raise ApprovalRequestNotFound
             if approval.status is not ApprovalStatus.PENDING:
                 raise AlreadyDecided
             refund = await session.get(Refund, approval.refund_id, with_for_update=True)
-            assert refund is not None
-            approval.status = (
-                ApprovalStatus.APPROVED if decision.approved else ApprovalStatus.REJECTED
-            )
+            assert refund is not None  # every Approval Request has its Refund (FK)
+            approval.status = decision.status
             approval.decided_by = decision.attendant_id
             approval.decided_at = datetime.now(UTC)
             approval.decision_reason = decision.reason
-            refund.status = RefundStatus.APPROVED if decision.approved else RefundStatus.REJECTED
+            refund.status = decision.refund_status
             audit.record(
                 session,
                 actor_type=ActorType.ATTENDANT,
                 actor_id=decision.attendant_id,
-                action="decide_approval",
+                action="decide_approval_request",
                 inputs={
                     "approval_request_id": str(approval.id),
                     "order_id": approval.order_id,
@@ -132,9 +129,7 @@ class Decisions:
         async with self._sessions() as session:
             rows = (
                 await session.execute(
-                    select(ApprovalRequest, Refund)
-                    .join(Refund, Refund.id == ApprovalRequest.refund_id)
-                    .where(
+                    _with_refund().where(
                         ApprovalRequest.status != ApprovalStatus.PENDING,
                         ApprovalRequest.relayed_at.is_(None),
                     )
@@ -147,7 +142,7 @@ class Decisions:
         """Issue the approved Refund and relay the decision to the Conversation, once."""
         async with self._sessions.begin() as session:
             approval = await session.get(ApprovalRequest, approval_request_id, with_for_update=True)
-            assert approval is not None
+            assert approval is not None  # settled only after its decision committed
             if approval.relayed_at is not None:
                 return
             refund = await session.get(Refund, approval.refund_id, with_for_update=True)
@@ -166,13 +161,7 @@ class Decisions:
                     },
                     result={"status": refund.status.value, "amount_cents": refund.amount_cents},
                 )
-            session.add(
-                Message(
-                    conversation_id=approval.conversation_id,
-                    role=MessageRole.AGENT,
-                    content=_decision_text(approval, refund),
-                )
-            )
+            _relay(session, approval.conversation_id, approval, refund)
             approval.relayed_at = datetime.now(UTC)
         await self._conversations.forget(approval.conversation_id)
 
@@ -184,8 +173,7 @@ class Decisions:
         async with self._sessions.begin() as session:
             rows = (
                 await session.execute(
-                    select(ApprovalRequest, Refund)
-                    .join(Refund, Refund.id == ApprovalRequest.refund_id)
+                    _with_refund()
                     .where(
                         ApprovalRequest.customer_id == customer_id,
                         ApprovalRequest.relayed_at.is_not(None),
@@ -198,13 +186,7 @@ class Decisions:
             notices = [_decision_text(approval, refund) for approval, refund in rows]
             copied = [(a, r) for a, r in rows if a.conversation_id != conversation_id]
             for approval, refund in copied:
-                session.add(
-                    Message(
-                        conversation_id=conversation_id,
-                        role=MessageRole.AGENT,
-                        content=_decision_text(approval, refund),
-                    )
-                )
+                _relay(session, conversation_id, approval, refund)
             for approval, _ in rows:
                 approval.seen_at = datetime.now(UTC)
         if copied:
@@ -225,7 +207,7 @@ class Decisions:
             )
 
     async def _resume(self, approval: ApprovalRequest, refund: Refund) -> None:
-        assert approval.decided_by is not None
+        assert approval.decided_by is not None  # resumed only once decided
         # Starting is idempotent: it also starts a workflow a crash left unstarted.
         await self.workflow.start(
             ApprovalPause(
@@ -245,6 +227,23 @@ class Decisions:
         )
 
 
+def _with_refund() -> Select[ApprovalRequest, Refund]:
+    return select(ApprovalRequest, Refund).join(Refund, Refund.id == ApprovalRequest.refund_id)
+
+
+def _relay(
+    session: AsyncSession, conversation_id: uuid.UUID, approval: ApprovalRequest, refund: Refund
+) -> None:
+    """Append the decision to the Conversation as an agent message."""
+    session.add(
+        Message(
+            conversation_id=conversation_id,
+            role=MessageRole.AGENT,
+            content=_decision_text(approval, refund),
+        )
+    )
+
+
 def _decision_text(approval: ApprovalRequest, refund: Refund) -> str:
     return render_refund_decision(
         refund.order_id,
@@ -255,15 +254,15 @@ def _decision_text(approval: ApprovalRequest, refund: Refund) -> str:
     )
 
 
-def _view(approval: ApprovalRequest, refund: Refund) -> ApprovalView:
-    return ApprovalView(
+def _view(approval: ApprovalRequest, refund: Refund) -> ApprovalRequestView:
+    return ApprovalRequestView(
         approval_request_id=approval.id,
         status=approval.status,
         order_id=approval.order_id,
         customer_id=approval.customer_id,
         refund_id=refund.id,
         amount_cents=refund.amount_cents,
-        reason=refund.reason,
+        refund_reason=refund.reason,
         refund_status=refund.status,
         policy_result=approval.policy_result,
         created_at=approval.created_at,

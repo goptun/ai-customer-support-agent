@@ -5,14 +5,16 @@ import uuid
 from dataclasses import dataclass
 
 from httpx import AsyncClient
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.approvals import ApprovalWorkflow, build_approval_graph
 from support_agent.config import Settings
 from support_agent.db import session_factory
 from support_agent.models import Customer
 
 from .conftest import app_client
-from .fakes import ScriptedLLM, faq, refund
+from .fakes import ScriptedLLM, faq, never_settled, refund
 from .test_api import chat, stored_messages, token_for
 from .test_cancel_order_tool import audit_of
 from .test_refund_tools import approval_requests_of, dispatched_order, refunds_of
@@ -125,7 +127,7 @@ async def test_attendant_lists_pending_requests_with_what_they_need_to_decide(
     assert listed["order_id"] == requested.order_id
     assert listed["customer_id"] == requested.customer_id
     assert listed["amount_cents"] == 10000
-    assert listed["reason"]
+    assert listed["refund_reason"]
     assert listed["status"] == "pending"
     assert listed["policy_result"]["ground"] == "delivered_recently"
     assert listed["policy_result"]["max_cents"] == 24990
@@ -149,7 +151,11 @@ async def test_approval_resumes_the_workflow_issues_the_refund_and_tells_the_cus
     assert role == "agent"
     assert f"#{issued.id}" in content and "R$ 100,00" in content and "aprovado" in content
     audit = await audit_of(engine, requested.order_id)
-    assert [entry.action for entry in audit] == ["create_refund", "decide_approval", "issue_refund"]
+    assert [entry.action for entry in audit] == [
+        "create_refund",
+        "decide_approval_request",
+        "issue_refund",
+    ]
     assert (audit[1].actor_type, audit[1].actor_id) == ("attendant", JULIA)
     assert audit[2].actor_type == "system"
 
@@ -174,7 +180,7 @@ async def test_rejection_needs_a_reason_which_is_relayed_to_the_customer(
     assert "recusado" in str(decision["content"])
     assert "Produto usado fora da garantia" in str(decision["content"])
     actions = [entry.action for entry in await audit_of(engine, requested.order_id)]
-    assert actions == ["create_refund", "decide_approval"]
+    assert actions == ["create_refund", "decide_approval_request"]
 
 
 async def test_deciding_an_already_decided_request_is_a_conflict_without_side_effects(
@@ -209,7 +215,7 @@ async def test_concurrent_decisions_decide_once(
     [refund_] = await refunds_of(engine, requested.order_id)
     assert refund_.status in ("issued", "rejected")
     actions = [entry.action for entry in await audit_of(engine, requested.order_id)]
-    assert actions.count("decide_approval") == 1
+    assert actions.count("decide_approval_request") == 1
 
 
 async def test_the_customer_sees_the_decision_on_their_next_message(
@@ -287,6 +293,12 @@ async def test_approval_resumes_the_checkpointed_workflow_after_a_restart(
     llm = ScriptedLLM()
     async with app_client(settings, llm) as before_restart:
         requested = await refund_requested(before_restart, llm, engine)
+
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpointer_url) as saver:
+        survived = await ApprovalWorkflow(build_approval_graph(saver, never_settled)).pending(
+            uuid.UUID(requested.approval_id)
+        )
+    assert survived is not None and str(survived.approval_request_id) == requested.approval_id
 
     async with app_client(settings, llm) as after_restart:
         status, decided = await decide(after_restart, requested.approval_id, "approve")

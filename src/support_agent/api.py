@@ -23,7 +23,12 @@ from support_agent.cancellations import Cancellations
 from support_agent.config import Settings, get_settings
 from support_agent.conversations import ConversationNotFound, Conversations
 from support_agent.db import session_factory
-from support_agent.decisions import AlreadyDecided, ApprovalNotFound, ApprovalView, Decisions
+from support_agent.decisions import (
+    AlreadyDecided,
+    ApprovalRequestNotFound,
+    ApprovalRequestView,
+    Decisions,
+)
 from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
 from support_agent.knowledge import Embedder, FastEmbedEmbedder, KnowledgeBase
 from support_agent.llm import LLM, AnthropicLLM
@@ -73,7 +78,7 @@ class MessageView(BaseModel):
     created_at: datetime
 
 
-class DecisionRequest(BaseModel):
+class DecisionBody(BaseModel):
     decision: Literal["approve", "reject"]
     reason: str | None = Field(default=None, max_length=1000)
 
@@ -281,17 +286,17 @@ def create_app(
         approval_status: Annotated[ApprovalStatus, Query(alias="status")] = (
             ApprovalStatus.PENDING
         ),
-    ) -> list[ApprovalView]:
+    ) -> list[ApprovalRequestView]:
         decisions: Decisions = request.app.state.decisions
         return await decisions.in_status(approval_status)
 
     @app.post("/approvals/{approval_request_id}")
-    async def decide_approval(
+    async def decide_approval_request(
         approval_request_id: uuid.UUID,
-        body: DecisionRequest,
+        body: DecisionBody,
         request: Request,
         attendant: Annotated[Principal, Depends(current_attendant)],
-    ) -> ApprovalView:
+    ) -> ApprovalRequestView:
         decisions: Decisions = request.app.state.decisions
         try:
             return await decisions.decide(
@@ -302,7 +307,7 @@ def create_app(
                     reason=body.reason,
                 ),
             )
-        except ApprovalNotFound:
+        except ApprovalRequestNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Approval Request not found") from None
         except AlreadyDecided:
             raise HTTPException(
