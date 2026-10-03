@@ -1,8 +1,10 @@
 import enum
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import JSON, BigInteger, Date, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -22,6 +24,23 @@ class OrderStatus(enum.StrEnum):
 class MessageRole(enum.StrEnum):
     CUSTOMER = "customer"
     AGENT = "agent"
+
+
+class TicketReason(enum.StrEnum):
+    CUSTOMER_REQUESTED = "customer_requested"
+    TOOL_FAILURE = "tool_failure"
+
+
+class TicketPriority(enum.StrEnum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class ActorType(enum.StrEnum):
+    CUSTOMER = "customer"
+    ATTENDANT = "attendant"
+    SYSTEM = "system"
 
 
 def _enum(cls: type[enum.StrEnum], name: str) -> Enum:
@@ -76,4 +95,33 @@ class Message(Base):
     role: Mapped[MessageRole] = mapped_column(_enum(MessageRole, "message_role"))
     content: Mapped[str] = mapped_column(Text)
     intent: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # ticket:{conversation_id}:{reason}; a repeat returns the original Ticket
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    order_id: Mapped[str | None] = mapped_column(ForeignKey("orders.id"))
+    reason: Mapped[TicketReason] = mapped_column(_enum(TicketReason, "ticket_reason"))
+    priority: Mapped[TicketPriority] = mapped_column(_enum(TicketPriority, "ticket_priority"))
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLogEntry(Base):
+    """Append-only (enforced by a trigger): one entry per side effect."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    actor_type: Mapped[ActorType] = mapped_column(_enum(ActorType, "actor_type"))
+    actor_id: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    inputs: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

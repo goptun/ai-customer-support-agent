@@ -6,12 +6,13 @@ authenticated run context, checks Order ownership and returns a typed result or 
 
 import enum
 import re
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from support_agent.logistics import (
     CarrierUnavailable,
@@ -19,8 +20,9 @@ from support_agent.logistics import (
     Tracking,
     TrackingNotFound,
 )
-from support_agent.models import OrderStatus
+from support_agent.models import ActorType, OrderStatus, TicketPriority, TicketReason
 from support_agent.orders import Orders
+from support_agent.tickets import NewTicket, TicketResult, Tickets
 
 _ORDER_ID = re.compile(r"^(?:ORD-?|#)?(\d{1,12})$", re.IGNORECASE)
 
@@ -64,7 +66,15 @@ class OrderStatusResult(BaseModel):
 class ToolDeps:
     orders: Orders
     logistics: LogisticsClient
+    tickets: Tickets
     today: Callable[[], date]
+
+
+def _normalize_order_id(value: str) -> str:
+    match = _ORDER_ID.match(value.strip())
+    if match is None:
+        raise ValueError("not an order number")
+    return f"ORD-{match.group(1)}"
 
 
 class GetOrderStatusArgs(BaseModel):
@@ -76,10 +86,21 @@ class GetOrderStatusArgs(BaseModel):
     @field_validator("order_id")
     @classmethod
     def _normalize(cls, value: str) -> str:
-        match = _ORDER_ID.match(value.strip())
-        if match is None:
-            raise ValueError("not an order number")
-        return f"ORD-{match.group(1)}"
+        return _normalize_order_id(value)
+
+
+class CreateSupportTicketArgs(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    reason: TicketReason
+    priority: TicketPriority
+    summary: str = Field(min_length=1, max_length=4000)
+    order_id: str | None = None
+
+    @field_validator("order_id")
+    @classmethod
+    def _normalize(cls, value: str | None) -> str | None:
+        return None if value is None else _normalize_order_id(value)
 
 
 def days_late(promised: date | None, delivered_at: datetime | None, today: date) -> int | None:
@@ -129,4 +150,37 @@ async def get_order_status(
         delivered_at=order.delivered_at,
         days_late=days_late(order.promised_delivery_date, order.delivered_at, deps.today()),
         shipment=shipment_info,
+    )
+
+
+async def create_support_ticket(
+    deps: ToolDeps, customer_id: str, conversation_id: uuid.UUID, args: Mapping[str, object]
+) -> TicketResult | ToolError:
+    try:
+        parsed = CreateSupportTicketArgs.model_validate(args)
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+
+    if await deps.tickets.conversation_owner(conversation_id) != customer_id:
+        return ToolError(code=ErrorCode.NOT_OWNED)
+    if parsed.order_id is not None:
+        found = await deps.orders.find_with_shipment(parsed.order_id)
+        if found is None:
+            return ToolError(code=ErrorCode.NOT_FOUND, order_id=parsed.order_id)
+        if found[0].customer_id != customer_id:
+            return ToolError(code=ErrorCode.NOT_OWNED, order_id=parsed.order_id)
+
+    # Asking for a human is the Customer's act; escalating on failures is the system's.
+    requested = parsed.reason is TicketReason.CUSTOMER_REQUESTED
+    return await deps.tickets.open(
+        NewTicket(
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+            order_id=parsed.order_id,
+            reason=parsed.reason,
+            priority=parsed.priority,
+            summary=parsed.summary,
+        ),
+        actor_type=ActorType.CUSTOMER if requested else ActorType.SYSTEM,
+        actor_id=customer_id if requested else None,
     )

@@ -8,6 +8,7 @@ from support_agent.db import session_factory
 from support_agent.logistics import LogisticsClient, ShipmentStatus
 from support_agent.orders import Orders
 from support_agent.seed import ANCHOR
+from support_agent.tickets import Tickets
 from support_agent.tools import (
     ErrorCode,
     OrderStatusResult,
@@ -47,9 +48,11 @@ def deps(engine: AsyncEngine, handler: Handler) -> ToolDeps:
     http = httpx.AsyncClient(
         base_url="http://logistics.test", transport=httpx.MockTransport(handler)
     )
+    sessions = session_factory(engine)
     return ToolDeps(
-        orders=Orders(session_factory(engine)),
+        orders=Orders(sessions),
         logistics=LogisticsClient(http, timeout_seconds=0.5),
+        tickets=Tickets(sessions),
         today=lambda: TODAY,
     )
 

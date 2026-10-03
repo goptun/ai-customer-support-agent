@@ -25,6 +25,7 @@ from support_agent.llm import LLM, AnthropicLLM
 from support_agent.logistics import LogisticsClient
 from support_agent.models import Customer, MessageRole
 from support_agent.orders import Orders
+from support_agent.tickets import Tickets
 from support_agent.tools import ToolDeps
 
 
@@ -101,6 +102,7 @@ def create_app(
                 logistics=LogisticsClient(
                     logistics_http, timeout_seconds=settings.logistics_timeout_seconds
                 ),
+                tickets=Tickets(app.state.sessions),
                 today=today,
             )
             app.state.graph = build_graph(
