@@ -1,6 +1,9 @@
 """The agent graph: classify_intent → resolve_context → act → respond, plus escalate.
 
-Policy questions (`faq`) go classify_intent → consult_knowledge_base → respond instead.
+Policy questions (`faq`) go classify_intent → consult_knowledge_base → respond instead, and
+questions about Refunds already requested go classify_intent → check_refunds → respond.
+A Refund request never pauses this thread: its approval waits on a thread of its own
+(ADR-0002), so the Customer keeps chatting meanwhile.
 A Cancellation the Order allows is asked in respond, then the run pauses in
 await_confirmation (an `interrupt()` on the Conversation thread) until the Customer's next
 message: `confirm` → cancel, `deny` → keep it, anything else drops it and goes back to
@@ -10,7 +13,7 @@ classify_intent as a new message.
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -26,6 +29,7 @@ from support_agent.cancellations import CancellationResult
 from support_agent.llm import LLM, Confirmation, ConversationMessage, Intent
 from support_agent.models import TicketPriority, TicketReason
 from support_agent.orders import OrderSummary
+from support_agent.refunds import RefundRequested
 from support_agent.replies import (
     ASK_ORDER_ID,
     CAPABILITIES,
@@ -44,6 +48,9 @@ from support_agent.replies import (
     render_queued,
     render_recent_orders,
     render_refund_changed,
+    render_refund_refused,
+    render_refund_requested,
+    render_refund_status,
     render_single_recent_order,
     render_ticket,
 )
@@ -53,13 +60,17 @@ from support_agent.tools import (
     ErrorCode,
     KnowledgeBaseResult,
     OrderStatusResult,
+    RefundRefused,
+    RefundStatusResult,
     RetryPolicy,
     ToolDeps,
     ToolError,
     call_with_retry,
     cancel_order,
+    create_refund,
     create_support_ticket,
     get_order_status,
+    get_refund_status,
     is_failure,
     preview_cancellation,
     search_knowledge_base,
@@ -73,7 +84,10 @@ _knowledge_result = TypeAdapter[KnowledgeBaseResult | ToolError](KnowledgeBaseRe
 _CancellationToolResult = CancellationPreview | CancellationResult | ToolError
 _cancellation_result = TypeAdapter[_CancellationToolResult](_CancellationToolResult)
 _cancellation_preview = TypeAdapter(CancellationPreview)
-ORDER_INTENTS = frozenset({Intent.ORDER_STATUS, Intent.CANCEL_ORDER})
+_RefundToolResult = RefundRequested | RefundRefused | RefundStatusResult | ToolError
+_refund_result = TypeAdapter[_RefundToolResult](_RefundToolResult)
+ORDER_INTENTS = frozenset({Intent.ORDER_STATUS, Intent.CANCEL_ORDER, Intent.REFUND})
+REFUND_REASON_CHARS = 1000  # the tool's limit on a Refund's reason
 # Refusals that still prove the Order exists and is the Customer's.
 OWNED_ORDER_ERRORS = frozenset({ErrorCode.ALREADY_DISPATCHED, ErrorCode.ALREADY_CANCELLED})
 
@@ -90,6 +104,9 @@ class QueuedIntent(TypedDict):
     intent: str
     order_id: str | None  # as the Customer wrote it alongside the Intent
     message: str  # the Customer message that raised it
+    # Entities of that message; absent in older checkpoints.
+    requested_amount_cents: NotRequired[int | None]
+    asks_refund_status: NotRequired[bool]
 
 
 class ConversationState(TypedDict, total=False):
@@ -105,6 +122,8 @@ class ConversationState(TypedDict, total=False):
     recent_orders: list[dict[str, Any]] | None  # no Order given or focused: the ones to offer
     single_recent_order: bool  # order_id was taken from the Customer's only recent Order
     confirmation: str | None  # Confirmation: the Customer's answer to the Cancellation question
+    requested_amount_cents: int | None  # the Refund amount the Customer asked for
+    asks_refund_status: bool  # about Refunds already requested, not a new one
     # Carried across turns.
     focused_order_id: str | None  # last Order whose ownership a tool verified
     tool_failures: dict[str, int]  # failed calls per tool in this Conversation
@@ -179,7 +198,8 @@ def build_graph(
         raised: list[Intent] = [i for i in classification.intents if i is not Intent.OTHER] or [
             Intent.OTHER
         ]
-        order_id = classification.entities.order_id
+        entities = classification.entities
+        order_id = entities.order_id
         message = state["messages"][-1].text
         queued = list(state.get("queued_intents") or [])
         update: ConversationState = {
@@ -193,8 +213,10 @@ def build_graph(
             "recent_orders": None,
             "single_recent_order": False,
             "confirmation": None,
+            "requested_amount_cents": entities.requested_amount_cents,
+            "asks_refund_status": entities.asks_refund_status,
         }
-        if classification.entities.wants_human:
+        if entities.wants_human:
             # Straight to a Ticket: no retention attempt. Understood, so no failed Clarification.
             update["escalation"] = TicketReason.CUSTOMER_REQUESTED.value
             update["clarifications"] = 0
@@ -216,13 +238,21 @@ def build_graph(
             resumed = queued.pop(0)
             update["intent"], update["order_id"] = resumed["intent"], resumed["order_id"]
             update["query"] = resumed.get("message", message)  # absent in older checkpoints
+            update["requested_amount_cents"] = resumed.get("requested_amount_cents")
+            update["asks_refund_status"] = resumed.get("asks_refund_status", False)
         else:
             handled = raised[0].value
             queued = [item for item in queued if item["intent"] != handled]
             for intent in raised[1:]:
                 if intent.value not in {handled, *(item["intent"] for item in queued)}:
                     queued.append(
-                        QueuedIntent(intent=intent.value, order_id=order_id, message=message)
+                        QueuedIntent(
+                            intent=intent.value,
+                            order_id=order_id,
+                            message=message,
+                            requested_amount_cents=entities.requested_amount_cents,
+                            asks_refund_status=entities.asks_refund_status,
+                        )
                     )
         update["queued_intents"] = queued
         return update
@@ -248,6 +278,8 @@ def build_graph(
     async def act(state: ConversationState, runtime: Runtime[RunContext]) -> ConversationState:
         if state["intent"] == Intent.CANCEL_ORDER:
             return await _check_cancellation(state, runtime.context.customer_id)
+        if state["intent"] == Intent.REFUND:
+            return await _request_refund(state, runtime.context)
         result = await call_with_retry(
             lambda: get_order_status(
                 deps.tools, runtime.context.customer_id, {"order_id": state.get("order_id")}
@@ -275,6 +307,38 @@ def build_graph(
             update["pending_cancellation"] = preview.model_dump(mode="json")
         elif preview.code in OWNED_ORDER_ERRORS:
             update["focused_order_id"] = preview.order_id
+        return update
+
+    async def _request_refund(state: ConversationState, context: RunContext) -> ConversationState:
+        # Order and amount as the Customer gave them; the ceiling is the tool's to compute.
+        result = await call_with_retry(
+            lambda: create_refund(
+                deps.tools,
+                context.customer_id,
+                context.conversation_id,
+                {
+                    "order_id": state.get("order_id"),
+                    "amount_cents": state.get("requested_amount_cents"),
+                    "reason": state["query"][:REFUND_REASON_CHARS],
+                },
+            ),
+            deps.retry,
+        )
+        update: ConversationState = {"tool_result": result.model_dump(mode="json")}
+        if isinstance(result, RefundRequested | RefundRefused):
+            update["focused_order_id"] = result.order_id
+        return update
+
+    async def check_refunds(
+        state: ConversationState, runtime: Runtime[RunContext]
+    ) -> ConversationState:
+        # Only an Order the Customer named narrows it down: the Focused Order may be another.
+        result = await get_refund_status(
+            deps.tools, runtime.context.customer_id, {"order_id": state.get("order_id")}
+        )
+        update: ConversationState = {"tool_result": result.model_dump(mode="json")}
+        if isinstance(result, RefundStatusResult) and result.order_id is not None:
+            update["focused_order_id"] = result.order_id
         return update
 
     async def await_confirmation(state: ConversationState) -> ConversationState:
@@ -379,6 +443,8 @@ def build_graph(
             return render_recent_orders(_order_summaries.validate_python(offered))
         if state["intent"] == Intent.CANCEL_ORDER:
             reply = _cancellation_reply(state)
+        elif state["intent"] == Intent.REFUND:
+            reply = _refund_reply(state)
         else:
             reply = await _order_status_reply(state)
         order_id = state.get("order_id")
@@ -394,6 +460,17 @@ def build_graph(
         if isinstance(result, CancellationPreview):
             return render_cancellation_question(result)
         return render_cancelled(result)
+
+    def _refund_reply(state: ConversationState) -> str:
+        # Deterministic wording, like Cancellations: eligibility and amounts come from code.
+        result = _refund_result.validate_python(state["tool_result"])
+        if isinstance(result, ToolError):
+            return render_error(result)
+        if isinstance(result, RefundRefused):
+            return render_refund_refused(result)
+        if isinstance(result, RefundStatusResult):
+            return render_refund_status(result)
+        return render_refund_requested(result)
 
     async def _order_status_reply(state: ConversationState) -> str:
         result = _tool_result.validate_python(state["tool_result"])
@@ -418,13 +495,17 @@ def build_graph(
 
     def after_classify(
         state: ConversationState,
-    ) -> Literal["escalate", "resolve_context", "consult_knowledge_base", "respond"]:
+    ) -> Literal[
+        "escalate", "resolve_context", "consult_knowledge_base", "check_refunds", "respond"
+    ]:
         if state.get("escalation"):
             return "escalate"
         if state.get("needs_clarification"):
             return "respond"
         if state["intent"] == Intent.FAQ:
             return "consult_knowledge_base"
+        if state["intent"] == Intent.REFUND and state.get("asks_refund_status"):
+            return "check_refunds"
         if state["intent"] not in ORDER_INTENTS:
             return "respond"
         return "resolve_context"
@@ -453,6 +534,7 @@ def build_graph(
     builder.add_node("resolve_context", resolve_context)
     builder.add_node("act", act)
     builder.add_node("consult_knowledge_base", consult_knowledge_base)
+    builder.add_node("check_refunds", check_refunds)
     builder.add_node("await_confirmation", await_confirmation)
     builder.add_node("cancel", cancel)
     builder.add_node("escalate", escalate)
@@ -462,6 +544,7 @@ def build_graph(
     builder.add_conditional_edges("resolve_context", after_resolve)
     builder.add_conditional_edges("act", after_act)
     builder.add_edge("consult_knowledge_base", "respond")
+    builder.add_edge("check_refunds", "respond")
     builder.add_conditional_edges("await_confirmation", after_confirmation)
     builder.add_edge("cancel", "respond")
     builder.add_edge("escalate", "respond")

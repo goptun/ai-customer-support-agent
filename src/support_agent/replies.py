@@ -12,14 +12,17 @@ from datetime import date, datetime
 from support_agent.cancellations import CancellationResult
 from support_agent.llm import Intent
 from support_agent.logistics import ShipmentStatus
-from support_agent.models import OrderStatus, TicketReason
+from support_agent.models import OrderStatus, RefundStatus, TicketReason
 from support_agent.orders import OrderSummary
+from support_agent.refunds import RefundRefusal, RefundRequested
 from support_agent.tickets import TicketResult
 from support_agent.tools import (
     CancellationPreview,
     ErrorCode,
     KnowledgeBaseResult,
     OrderStatusResult,
+    RefundRefused,
+    RefundStatusResult,
     ToolError,
 )
 
@@ -30,7 +33,8 @@ ASK_ORDER_ID = (
 CAPABILITIES = (
     "Sou o assistente de atendimento da loja. Por enquanto consigo te ajudar a acompanhar "
     "seus pedidos (me diga o número do pedido e eu verifico o status e a entrega), cancelar "
-    "pedidos que ainda não foram enviados e tirar dúvidas sobre as políticas da loja, como "
+    "pedidos que ainda não foram enviados, solicitar e acompanhar reembolsos e tirar dúvidas "
+    "sobre as políticas da loja, como "
     "prazos de entrega, trocas e reembolsos. Se preferir, também posso te passar para um "
     "atendente."
 )
@@ -163,6 +167,95 @@ def render_refund_changed(order_id: str) -> str:
         f"O pedido {order_id} mudou desde a minha pergunta e o reembolso não seria mais o que "
         "você confirmou, então não cancelei nada."
     )
+
+
+REFUND_STATUS_LABELS = {
+    RefundStatus.PENDING_APPROVAL: "aguardando aprovação de um atendente",
+    RefundStatus.APPROVED: "aprovado, aguardando emissão",
+    RefundStatus.ISSUED: "emitido",
+    RefundStatus.REJECTED: "recusado",
+}
+# Said with every refusal: the Customer can still contest it with a human.
+TICKET_OFFER = (
+    "Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: "
+    "é só me pedir."
+)
+
+
+def render_refund_requested(result: RefundRequested) -> str:
+    awaiting = (
+        "Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser "
+        f"emitido, então o reembolso #{result.refund_id} está aguardando aprovação. Você pode "
+        "continuar falando comigo enquanto isso e me perguntar o status do reembolso quando "
+        "quiser."
+    )
+    amount = _format_money(result.amount_cents)
+    if result.already_pending:
+        return (
+            f"O pedido {result.order_id} já tem um reembolso de {amount} aguardando aprovação "
+            f"de um atendente (reembolso #{result.refund_id}), então não abri outro. Você pode "
+            "me perguntar o status do reembolso quando quiser."
+        )
+    maximum = _format_money(result.max_cents)
+    if result.capped and result.requested_cents is not None:
+        what = (
+            f"Você pediu {_format_money(result.requested_cents)}, mas o máximo que pode ser "
+            f"reembolsado neste pedido é {maximum} (o valor pago menos reembolsos anteriores), "
+            f"então solicitei o reembolso de {amount}."
+        )
+    elif result.amount_cents < result.max_cents:
+        what = f"Solicitei o reembolso de {amount}, como você pediu (o máximo seria {maximum})."
+    else:
+        what = f"Solicitei o reembolso de {amount}, o valor máximo para este pedido."
+    return f"O pedido {result.order_id} tem direito a reembolso. {what} {awaiting}"
+
+
+def render_refund_refused(result: RefundRefused) -> str:
+    order_id = result.order_id
+    why = {
+        RefundRefusal.ORDER_CANCELLED: (
+            f"O pedido {order_id} está cancelado: se ele estava pago, o reembolso integral já "
+            "foi emitido no cancelamento (Política de Cancelamento)."
+        ),
+        RefundRefusal.NOT_DISPATCHED: (
+            f"O pedido {order_id} ainda não foi enviado, então não cabe reembolso: você pode "
+            "cancelá-lo, e se ele já estiver pago o reembolso integral é feito automaticamente "
+            "(Política de Cancelamento)."
+        ),
+        RefundRefusal.DELIVERY_WINDOW_EXPIRED: (
+            f"O pedido {order_id} foi entregue há mais de {result.delivery_window_days} dias, e "
+            "pela Política de Reembolso só é possível pedir reembolso de pedidos entregues há "
+            f"no máximo {result.delivery_window_days} dias."
+        ),
+        RefundRefusal.NOT_LATE_ENOUGH: (
+            f"O pedido {order_id} ainda está a caminho, sem extravio informado pela "
+            f"transportadora e sem passar de {result.late_after_days} dias de atraso em relação "
+            "à previsão de entrega. Pela Política de Reembolso e pela Política de Atrasos e "
+            "Extravios, o reembolso de um pedido a caminho só é possível nesses casos."
+        ),
+        RefundRefusal.NOTHING_LEFT: (
+            f"Os reembolsos do pedido {order_id} já somam o valor pago nele, então não há mais "
+            "valor a reembolsar (Política de Reembolso)."
+        ),
+        # Reported as a carrier failure, never as a refusal; listed to keep this exhaustive.
+        RefundRefusal.CARRIER_UNAVAILABLE: (
+            "Não consegui consultar a transportadora agora. Tente novamente em alguns minutos."
+        ),
+    }[result.reason]
+    return f"{why} {TICKET_OFFER}"
+
+
+def render_refund_status(result: RefundStatusResult) -> str:
+    whose = f"do pedido {result.order_id}" if result.order_id else "seus"
+    if not result.refunds:
+        return f"Não encontrei reembolsos {whose}."
+    lines = [
+        f"- Reembolso #{refund.refund_id} do pedido {refund.order_id}, de "
+        f"{_format_money(refund.amount_cents)}: {REFUND_STATUS_LABELS[refund.status]}."
+        for refund in result.refunds
+    ]
+    heading = f"Reembolsos do pedido {result.order_id}:" if result.order_id else "Seus reembolsos:"
+    return "\n".join([heading, *lines])
 
 
 def render_recent_orders(orders: list[OrderSummary]) -> str:
