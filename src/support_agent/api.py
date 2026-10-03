@@ -18,6 +18,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from support_agent.auth import InvalidToken, Principal, Role, issue_token, verify_token
+from support_agent.cancellations import Cancellations
 from support_agent.config import Settings, get_settings
 from support_agent.conversations import ConversationNotFound, Conversations
 from support_agent.db import session_factory
@@ -106,6 +107,7 @@ def create_app(
                     logistics_http, timeout_seconds=settings.logistics_timeout_seconds
                 ),
                 tickets=Tickets(app.state.sessions),
+                cancellations=Cancellations(app.state.sessions),
                 knowledge_base=KnowledgeBase(
                     app.state.sessions,
                     embedder

@@ -7,6 +7,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -52,6 +53,13 @@ class TicketPriority(enum.StrEnum):
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
+
+
+class RefundStatus(enum.StrEnum):
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    ISSUED = "issued"
+    REJECTED = "rejected"
 
 
 class ActorType(enum.StrEnum):
@@ -127,6 +135,32 @@ class Ticket(Base):
     reason: Mapped[TicketReason] = mapped_column(_enum(TicketReason, "ticket_reason"))
     priority: Mapped[TicketPriority] = mapped_column(_enum(TicketPriority, "ticket_priority"))
     summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Refund(Base):
+    __tablename__ = "refunds"
+    __table_args__ = (CheckConstraint("amount_cents > 0", name="ck_refunds_amount_positive"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # cancel:{order_id} for a Cancellation's Refund; a repeat returns the original Refund
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
+    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[RefundStatus] = mapped_column(_enum(RefundStatus, "refund_status"))
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Cancellation(Base):
+    __tablename__ = "cancellations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # cancel:{order_id}; a repeat returns the original Cancellation
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), unique=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"))  # None: unpaid
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

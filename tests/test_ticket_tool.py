@@ -8,6 +8,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.cancellations import Cancellations
 from support_agent.db import session_factory
 from support_agent.logistics import LogisticsClient
 from support_agent.models import AuditLogEntry, Conversation, Ticket
@@ -37,6 +38,7 @@ def deps(engine: AsyncEngine) -> ToolDeps:
             httpx.AsyncClient(transport=httpx.MockTransport(no_carrier)), timeout_seconds=0.5
         ),
         tickets=Tickets(sessions),
+        cancellations=Cancellations(sessions),
         knowledge_base=lexical_knowledge_base(sessions),
         today=ANCHOR.date,
     )

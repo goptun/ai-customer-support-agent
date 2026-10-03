@@ -16,6 +16,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from support_agent.cancellations import (
+    CancellationRefusal,
+    CancellationResult,
+    Cancellations,
+    decide_cancellation,
+)
 from support_agent.knowledge import KnowledgeBase, PolicyExcerpt
 from support_agent.logistics import (
     CarrierUnavailable,
@@ -23,7 +29,7 @@ from support_agent.logistics import (
     Tracking,
     TrackingNotFound,
 )
-from support_agent.models import ActorType, OrderStatus, TicketPriority, TicketReason
+from support_agent.models import ActorType, Order, OrderStatus, TicketPriority, TicketReason
 from support_agent.orders import Orders
 from support_agent.tickets import NewTicket, TicketResult, Tickets
 
@@ -36,6 +42,8 @@ class ErrorCode(enum.StrEnum):
     INVALID_ARGUMENT = "invalid_argument"
     UPSTREAM_UNAVAILABLE = "upstream_unavailable"
     TRACKING_NOT_FOUND = "tracking_not_found"
+    ALREADY_DISPATCHED = "already_dispatched"
+    ALREADY_CANCELLED = "already_cancelled"
 
 
 class ToolError(BaseModel):
@@ -70,12 +78,22 @@ class KnowledgeBaseResult(BaseModel):
     chunks: list[PolicyExcerpt]  # best first; empty when the Knowledge Base doesn't cover it
 
 
+class CancellationPreview(BaseModel):
+    """What cancelling the Order now would do; shown to the Customer for confirmation."""
+
+    kind: Literal["cancellation_preview"] = "cancellation_preview"
+    order_id: str
+    status: OrderStatus
+    refund_cents: int  # 0: nothing to refund
+
+
 @dataclass(frozen=True)
 class ToolDeps:
     orders: Orders
     logistics: LogisticsClient
     tickets: Tickets
     knowledge_base: KnowledgeBase
+    cancellations: Cancellations
     today: Callable[[], date]
 
 
@@ -88,6 +106,17 @@ def _normalize_order_id(value: str) -> str:
 
 class GetOrderStatusArgs(BaseModel):
     # Unknown keys (e.g. a customer_id the LLM made up) are ignored, never trusted.
+    model_config = ConfigDict(extra="ignore")
+
+    order_id: str
+
+    @field_validator("order_id")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        return _normalize_order_id(value)
+
+
+class CancelOrderArgs(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     order_id: str
@@ -173,6 +202,53 @@ async def get_order_status(
         days_late=days_late(order.promised_delivery_date, order.delivered_at, deps.today()),
         shipment=shipment_info,
     )
+
+
+async def _owned_order(
+    deps: ToolDeps, customer_id: str, args: Mapping[str, object]
+) -> Order | ToolError:
+    try:
+        order_id = CancelOrderArgs.model_validate(args).order_id
+    except ValidationError:
+        return ToolError(code=ErrorCode.INVALID_ARGUMENT)
+    found = await deps.orders.find_with_shipment(order_id)
+    if found is None:
+        return ToolError(code=ErrorCode.NOT_FOUND, order_id=order_id)
+    if found[0].customer_id != customer_id:
+        return ToolError(code=ErrorCode.NOT_OWNED, order_id=order_id)
+    return found[0]
+
+
+async def preview_cancellation(
+    deps: ToolDeps, customer_id: str, args: Mapping[str, object]
+) -> CancellationPreview | ToolError:
+    """Check whether the Order can be Cancelled and what would be refunded; changes nothing."""
+    order = await _owned_order(deps, customer_id, args)
+    if isinstance(order, ToolError):
+        return order
+    decision = decide_cancellation(
+        order.status,
+        order.total_paid_cents,
+        await deps.cancellations.prior_refunds_cents(order.id),
+    )
+    if isinstance(decision, CancellationRefusal):
+        return ToolError(code=ErrorCode(decision.value), order_id=order.id)
+    return CancellationPreview(
+        order_id=order.id, status=order.status, refund_cents=decision.refund_cents
+    )
+
+
+async def cancel_order(
+    deps: ToolDeps, customer_id: str, args: Mapping[str, object]
+) -> CancellationResult | ToolError:
+    """Cancel the whole Order, issuing its full Refund if paid. Only after explicit confirmation."""
+    order = await _owned_order(deps, customer_id, args)
+    if isinstance(order, ToolError):
+        return order
+    result = await deps.cancellations.cancel(order.id, customer_id)
+    if isinstance(result, CancellationRefusal):
+        return ToolError(code=ErrorCode(result.value), order_id=order.id)
+    return result
 
 
 async def create_support_ticket(

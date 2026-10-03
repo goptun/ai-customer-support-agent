@@ -4,6 +4,7 @@ from datetime import date
 import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.cancellations import Cancellations
 from support_agent.db import session_factory
 from support_agent.logistics import LogisticsClient, ShipmentStatus
 from support_agent.orders import Orders
@@ -55,6 +56,7 @@ def deps(engine: AsyncEngine, handler: Handler) -> ToolDeps:
         orders=Orders(sessions),
         logistics=LogisticsClient(http, timeout_seconds=0.5),
         tickets=Tickets(sessions),
+        cancellations=Cancellations(sessions),
         knowledge_base=lexical_knowledge_base(sessions),
         today=lambda: TODAY,
     )
