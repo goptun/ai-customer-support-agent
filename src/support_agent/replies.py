@@ -211,6 +211,17 @@ def render_refund_requested(result: RefundRequested) -> str:
     return f"O pedido {result.order_id} tem direito a reembolso. {what} {awaiting}"
 
 
+def render_refund_decision(
+    order_id: str, refund_id: int, amount_cents: int, approved: bool, reason: str | None
+) -> str:
+    """The Attendant's decision, as relayed to the Customer."""
+    refund = f"O reembolso #{refund_id} de {_format_money(amount_cents)} do pedido {order_id}"
+    if approved:
+        return f"{refund} foi aprovado por um atendente e emitido."
+    because = (reason or "").rstrip(".")
+    return f"{refund} foi recusado por um atendente. Motivo: {because}. {TICKET_OFFER}"
+
+
 def render_refund_refused(result: RefundRefused) -> str:
     order_id = result.order_id
     why = {

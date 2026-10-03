@@ -37,7 +37,7 @@ from support_agent.tools import (
     get_refund_status,
 )
 
-from .fakes import lexical_knowledge_base
+from .fakes import lexical_knowledge_base, never_settled
 from .test_cancel_order_tool import audit_of, new_order
 from .test_order_status_tool import Handler, tracking_json
 from .test_ticket_tool import new_conversation
@@ -65,7 +65,7 @@ class Tools:
     def __init__(self, engine: AsyncEngine, carrier: Handler = no_carrier) -> None:
         self.engine = engine
         sessions = session_factory(engine)
-        self.workflow = ApprovalWorkflow(build_approval_graph(InMemorySaver()))
+        self.workflow = ApprovalWorkflow(build_approval_graph(InMemorySaver(), never_settled))
         self.deps = ToolDeps(
             orders=Orders(sessions),
             logistics=LogisticsClient(

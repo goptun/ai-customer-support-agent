@@ -9,7 +9,7 @@ cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET and ANTHROPIC_API_KEY
 docker compose up -d --build
 ```
 
-Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`, and `cus_diego` with a single recent Order) and Orders. It also indexes the Knowledge Base: the pt-BR policies in `src/support_agent/policies/` (one Markdown file per policy, one chunk per `##` section), embedded with a local multilingual model baked into the image (fastembed) and stored in pgvector. Only documents that changed are re-embedded.
+Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`, and `cus_diego` with a single recent Order), Attendants (`att_julia`, `att_marcos`) and Orders. It also indexes the Knowledge Base: the pt-BR policies in `src/support_agent/policies/` (one Markdown file per policy, one chunk per `##` section), embedded with a local multilingual model baked into the image (fastembed) and stored in pgvector. Only documents that changed are re-embedded.
 
 ```sh
 TOKEN=$(curl -s -X POST localhost:8003/auth/dev-token \
@@ -19,6 +19,20 @@ curl -s -X POST localhost:8003/chat -H "Authorization: Bearer $TOKEN" \
 ```
 
 Send the returned `conversation_id` to continue the same Conversation. Policy questions ("Qual o prazo para trocar um produto?") are answered from the Knowledge Base, naming the policy; when no policy covers the question the agent says so and offers a Ticket.
+
+### Approving Refunds
+
+An eligible Refund waits for an Attendant. With an Attendant token, list and decide them (a reason is required to reject):
+
+```sh
+ATT=$(curl -s -X POST localhost:8003/auth/dev-token \
+  -H 'content-type: application/json' -d '{"attendant_id":"att_julia"}' | jq -r .access_token)
+curl -s localhost:8003/approvals?status=pending -H "Authorization: Bearer $ATT"
+curl -s -X POST localhost:8003/approvals/<approval_request_id> -H "Authorization: Bearer $ATT" \
+  -H 'content-type: application/json' -d '{"decision":"approve"}'
+```
+
+Approving resumes the paused approval workflow and issues the Refund. The decision is appended to the Conversation; the Customer sees it in `notices` on their next `/chat` (even in a new Conversation) or by polling `GET /conversations/{id}/messages`.
 
 ### Logistics scenarios
 

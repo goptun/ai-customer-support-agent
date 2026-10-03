@@ -1,17 +1,20 @@
 """The approval workflow: one graph thread per Approval Request, paused until an Attendant decides.
 
 It runs apart from the Conversation thread (ADR-0002), so the Customer keeps chatting while
-it waits, and is checkpointed in Postgres so the wait survives restarts (ADR-0001).
+it waits, and is checkpointed in Postgres so the wait survives restarts (ADR-0001). Resumed
+with the Attendant's decision, it settles it: issues the Refund if approved and relays the
+decision to the Conversation.
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import interrupt
+from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
 
@@ -25,25 +28,47 @@ class ApprovalPause(BaseModel):
     amount_cents: int
 
 
+class ApprovalDecision(BaseModel):
+    """The Attendant's decision, already recorded; the resume value."""
+
+    approved: bool
+    attendant_id: str
+    reason: str | None
+
+
 class ApprovalState(TypedDict, total=False):
     request: dict[str, Any]  # ApprovalPause
-    decision: dict[str, Any] | None  # the Attendant's, given on resume
+    decision: dict[str, Any] | None  # ApprovalDecision, given on resume
+
+
+# Carries out a recorded decision; idempotent, as a crash can make it run again.
+Settle = Callable[[uuid.UUID], Awaitable[None]]
 
 
 def approval_thread_id(approval_request_id: uuid.UUID) -> str:
     return f"approval:{approval_request_id}"
 
 
+def _config(approval_request_id: uuid.UUID) -> RunnableConfig:
+    return {"configurable": {"thread_id": approval_thread_id(approval_request_id)}}
+
+
 def build_approval_graph(
-    checkpointer: BaseCheckpointSaver[Any],
+    checkpointer: BaseCheckpointSaver[Any], settle: Settle
 ) -> CompiledStateGraph[Any, None]:
     def await_decision(state: ApprovalState) -> ApprovalState:
         # Pauses the thread; resuming it with the Attendant's decision continues from here.
         return {"decision": interrupt(state["request"])}
 
+    async def settle_decision(state: ApprovalState) -> ApprovalState:
+        await settle(ApprovalPause.model_validate(state["request"]).approval_request_id)
+        return {}
+
     builder = StateGraph(ApprovalState)
     builder.add_node("await_decision", await_decision)
+    builder.add_node("settle", settle_decision)
     builder.add_edge(START, "await_decision")
+    builder.add_edge("await_decision", "settle")
     return builder.compile(checkpointer=checkpointer)
 
 
@@ -56,9 +81,7 @@ class ApprovalWorkflow:
 
         One that a crash stopped before its pause runs on from its last checkpoint.
         """
-        config: RunnableConfig = {
-            "configurable": {"thread_id": approval_thread_id(pause.approval_request_id)}
-        }
+        config = _config(pause.approval_request_id)
         state = await self._graph.aget_state(config)
         if state.interrupts:
             return
@@ -70,8 +93,19 @@ class ApprovalWorkflow:
 
     async def pending(self, approval_request_id: uuid.UUID) -> ApprovalPause | None:
         """What the workflow is paused on, or None if it isn't paused."""
-        config: RunnableConfig = {
-            "configurable": {"thread_id": approval_thread_id(approval_request_id)}
-        }
-        interrupts = (await self._graph.aget_state(config)).interrupts
+        interrupts = (await self._graph.aget_state(_config(approval_request_id))).interrupts
         return ApprovalPause.model_validate(interrupts[0].value) if interrupts else None
+
+    async def resume(self, approval_request_id: uuid.UUID, decision: ApprovalDecision) -> None:
+        """Continue the paused workflow with the decision; one already past it is left as is.
+
+        One that a crash stopped while settling runs on from its last checkpoint.
+        """
+        config = _config(approval_request_id)
+        state = await self._graph.aget_state(config)
+        if state.interrupts:
+            await self._graph.ainvoke(
+                Command(resume=decision.model_dump(mode="json")), config=config
+            )
+        elif state.next:
+            await self._graph.ainvoke(None, config=config)

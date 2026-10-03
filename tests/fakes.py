@@ -1,5 +1,6 @@
 import math
 import re
+import uuid
 import zlib
 from collections.abc import Sequence
 from typing import Any
@@ -86,12 +87,19 @@ def _last_customer_message(history: Sequence[ConversationMessage]) -> str:
     return next(m.content for m in reversed(history) if m.role == "user")
 
 
+async def never_settled(approval_request_id: uuid.UUID) -> None:
+    """For approval workflows no test resumes; Decisions settles the ones that are."""
+    raise AssertionError(f"unexpected settle of {approval_request_id}")
+
+
 def refunds(
     sessions: async_sessionmaker[AsyncSession],
     checkpointer: BaseCheckpointSaver[Any] | None = None,
 ) -> Refunds:
     """Refunds under the default Refund Policy, approval workflows checkpointed in memory."""
-    workflow = ApprovalWorkflow(build_approval_graph(checkpointer or InMemorySaver()))
+    workflow = ApprovalWorkflow(
+        build_approval_graph(checkpointer or InMemorySaver(), never_settled)
+    )
     return Refunds(sessions, RefundPolicy(), workflow)
 
 

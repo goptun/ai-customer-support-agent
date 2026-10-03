@@ -1,5 +1,6 @@
 import os
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 
 import pytest
 from alembic import command
@@ -76,10 +77,9 @@ def llm() -> ScriptedLLM:
     return ScriptedLLM()
 
 
-@pytest.fixture(scope="session")
-async def client(
-    settings: Settings, engine: AsyncEngine, llm: ScriptedLLM
-) -> AsyncIterator[AsyncClient]:
+@asynccontextmanager
+async def app_client(settings: Settings, llm: ScriptedLLM) -> AsyncIterator[AsyncClient]:
+    """A freshly built app and a client for it; a second one stands in for a restart."""
     app = create_app(
         settings,
         llm=llm,
@@ -91,4 +91,12 @@ async def client(
         LifespanManager(app) as manager,
         AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as client,
     ):
+        yield client
+
+
+@pytest.fixture(scope="session")
+async def client(
+    settings: Settings, engine: AsyncEngine, llm: ScriptedLLM
+) -> AsyncIterator[AsyncClient]:
+    async with app_client(settings, llm) as client:
         yield client

@@ -1,4 +1,5 @@
-"""Idempotent seed of fictional Customers, Orders and Shipments, and the Knowledge Base index.
+"""Idempotent seed of fictional Customers, Attendants, Orders and Shipments, and the Knowledge
+Base index.
 
 Run with `python -m support_agent.seed`. Re-running never duplicates or overwrites rows, and
 re-embeds only policy documents that changed.
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from support_agent.config import get_settings
 from support_agent.db import session_factory
 from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
-from support_agent.models import Customer, Order, OrderStatus, Shipment
+from support_agent.models import Attendant, Customer, Order, OrderStatus, Shipment
 
 # Dates are relative to a fixed anchor so the seed is deterministic across runs.
 ANCHOR = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -33,6 +34,11 @@ CUSTOMERS: list[dict[str, Any]] = [
     {"id": "cus_bruno", "name": "Bruno Lima", "email": "bruno.lima@example.com"},
     {"id": "cus_carla", "name": "Carla Mendes", "email": "carla.mendes@example.com"},
     {"id": "cus_diego", "name": "Diego Alves", "email": "diego.alves@example.com"},
+]
+
+ATTENDANTS: list[dict[str, Any]] = [
+    {"id": "att_julia", "name": "Júlia Rocha"},
+    {"id": "att_marcos", "name": "Marcos Pereira"},
 ]
 
 ORDERS: list[dict[str, Any]] = [
@@ -197,6 +203,7 @@ SHIPMENTS: list[dict[str, Any]] = [
 async def seed(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with sessions.begin() as session:
         await session.execute(insert(Customer).values(CUSTOMERS).on_conflict_do_nothing())
+        await session.execute(insert(Attendant).values(ATTENDANTS).on_conflict_do_nothing())
         await session.execute(insert(Order).values(ORDERS).on_conflict_do_nothing())
         await session.execute(
             insert(Shipment)

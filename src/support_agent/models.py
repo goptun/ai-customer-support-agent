@@ -92,6 +92,13 @@ class Customer(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
 
 
+class Attendant(Base):
+    __tablename__ = "attendants"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+
+
 class Order(Base):
     __tablename__ = "orders"
 
@@ -203,6 +210,13 @@ class ApprovalRequest(Base):
     # The Refund Policy's result (ground, max, requested, capped), shown to the Attendant.
     policy_result: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey("attendants.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(Text)  # required on rejection
+    # When the resumed workflow appended the decision to the Conversation.
+    relayed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When the Customer was shown it (next message, polling or a new Conversation).
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AuditLogEntry(Base):
