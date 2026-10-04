@@ -449,15 +449,21 @@ def is_grounded(reply: str, facts: Facts) -> bool:
     return literals_grounded and statuses_grounded
 
 
-# A negation up to two words before a wording, in the same clause, contradicts it: "não foi
-# extraviado", "nunca foi devolvido", "não é da transportadora" (#49).
+# A negation shortly before a wording, in the same clause, contradicts it: "não foi extraviado",
+# "não é da transportadora" (#49). Two words at most, so "Não consegui consultar a
+# transportadora" still names the carrier.
 _NEGATED = re.compile(r"\b(?:não|nunca|nem)(?:\s+[^\s.,;:!?]+){0,2}\s+$")
+# What happened to the Shipment is contradicted by a negation anywhere earlier in its clause:
+# "não sei se foi extraviado", "nunca chegou a ser devolvido".
+_NEGATED_IN_CLAUSE = re.compile(r"\b(?:não|nunca|nem)\b[^.,;:!?]*$")
+_CLAUSE_WIDE = frozenset().union(*_WONT_ARRIVE.values())
 
 
-def _states(folded_reply: str, wording: str) -> bool:
+def _affirms(folded_reply: str, wording: str) -> bool:
     """True if the reply says the wording somewhere without negating it."""
+    negated = _NEGATED_IN_CLAUSE if wording in _CLAUSE_WIDE else _NEGATED
     return any(
-        not _NEGATED.search(folded_reply, 0, match.start())
+        not negated.search(folded_reply, 0, match.start())
         for match in re.finditer(re.escape(wording.casefold()), folded_reply)
     )
 
@@ -465,7 +471,7 @@ def _states(folded_reply: str, wording: str) -> bool:
 def is_complete(reply: str, facts: Facts) -> bool:
     """True if the reply states every fact the Customer needs, and negates none of them."""
     folded_reply = reply.casefold()
-    return all(any(_states(folded_reply, wording) for wording in fact) for fact in facts.required)
+    return all(any(_affirms(folded_reply, wording) for wording in fact) for fact in facts.required)
 
 
 def grounded_reply(reply: str, facts: Facts) -> str:

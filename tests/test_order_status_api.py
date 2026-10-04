@@ -315,6 +315,20 @@ async def test_reply_with_every_required_fact_is_kept(
             id="returned_said_nem_returned",
         ),
         pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Do ORD-1004 (BR100000004) não sei se foi extraviado, ainda não há atualização.",
+            "extraviado",
+            id="lost_doubted_far_from_the_negation",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2004",
+            "O ORD-2004 (rastreio BR200000004) nunca chegou a ser devolvido.",
+            "devolvido",
+            id="returned_denied_far_from_the_negation",
+        ),
+        pytest.param(
             "cus_carla",
             "ORD-3004",
             "O ORD-3004 (rastreio BR300000004) tem previsão para 04/09/2026, e o atraso no "
