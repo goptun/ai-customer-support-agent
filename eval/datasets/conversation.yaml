@@ -51,6 +51,20 @@ conversations:
         tool_calls: [{name: search_knowledge_base}]
         facts: ["30 dias"]
 
+  - id: multi_intent_refund_and_policy
+    customer_id: cus_ana
+    outcome: resolved
+    description: Asks for money back and how long it takes; the policy question waits its turn.
+    turns:
+      - message: "Quero reembolso do 1001, em quanto tempo cai?"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001}}]
+        facts: ["R$ 249,90", "aguardando aprovação", "tirar uma dúvida"]
+      - message: "Pode responder a dúvida"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["5 dias úteis"]
+
   - id: clarification
     customer_id: cus_carla
     outcome: clarification

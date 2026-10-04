@@ -156,6 +156,23 @@ conversations:
         tool_calls: [{name: get_refund_status, args: {order_id: ORD-1004}}]
         facts: ["foi aprovado por um atendente", "emitido"]
 
+  - id: refund_own_timing
+    customer_id: cus_ana
+    outcome: resolved
+    description: >-
+      Asks when the money of their own approved Refund lands: the status of their Refund,
+      not how refunds work.
+    turns:
+      - message: "Quero reembolso do pedido ORD-1004, foi extraviado"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1004}}]
+        facts: ["aguardando aprovação"]
+      - message: "Meu reembolso do ORD-1004 foi aprovado, quando cai?"
+        attendant: {decision: approve}
+        intent: refund
+        tool_calls: [{name: get_refund_status, args: {order_id: ORD-1004}}]
+        facts: ["foi aprovado por um atendente", "emitido"]
+
   - id: refund_rejected
     customer_id: cus_bruno
     outcome: resolved
