@@ -1,0 +1,1733 @@
+{
+  "dataset": "order_status",
+  "started_at": "2026-10-04T15:12:59.819756Z",
+  "models": {
+    "provider": "openai_compatible",
+    "classifier": "arsenal-vps",
+    "responder": "arsenal-vps",
+    "judge": "arsenal-vps"
+  },
+  "git_commit": "5635528",
+  "summary": {
+    "conversations": 20,
+    "conversations_failed": 0,
+    "turns": 23,
+    "task_completion_rate": 0.95,
+    "tool_call_accuracy": 1.0,
+    "intent_accuracy": 1.0,
+    "hallucination_rate": 0.0,
+    "judged_turns": 11,
+    "escalation_rate_appropriate": 0.1,
+    "escalation_rate_avoidable": 0.0,
+    "escalations_missed": 0,
+    "latency_ms": {
+      "turn": {
+        "count": 23,
+        "p50": 5842.297420836985,
+        "p95": 12379.859916353595
+      },
+      "nodes": {
+        "act": {
+          "count": 20,
+          "p50": 8.193,
+          "p95": 10525.826600000002
+        },
+        "classify_intent": {
+          "count": 23,
+          "p50": 2642.0,
+          "p95": 4037.1694999999995
+        },
+        "escalate": {
+          "count": 2,
+          "p50": 14.0085,
+          "p95": 15.07365
+        },
+        "resolve_context": {
+          "count": 22,
+          "p50": 1.488,
+          "p95": 6.64715
+        },
+        "respond": {
+          "count": 23,
+          "p50": 2719.936,
+          "p95": 6217.257199999999
+        }
+      }
+    }
+  },
+  "conversations": [
+    {
+      "id": "in_transit",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Oi! Meu pedido ORD-1002 já saiu? Quando chega?",
+          "reply": "Olá! Sim, o pedido ORD‑1002 já foi enviado. O código de rastreio é **BR100000002** e a previsão de entrega era **03/09/2026**. No momento, o objeto está em trânsito para a unidade de destino. Qualquer outra dúvida, estou à disposição!",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1002",
+                "status": "shipped",
+                "placed_at": "2026-08-26T12:00:00Z",
+                "promised_delivery_date": "2026-09-03",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR100000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "in_transit",
+                    "latest_event": {
+                      "at": "2026-08-31T12:00:00Z",
+                      "status": "in_transit",
+                      "description": "Objeto em trânsito para a unidade de destino",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 6537.422269117087,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 4066.8199999999997
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.627
+            },
+            {
+              "node": "act",
+              "ms": 9.984
+            },
+            {
+              "node": "respond",
+              "ms": 2424.4210000000003
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "in_transit_number_only",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "cadê o pedido 1002?",
+          "reply": "Olá! Seu pedido **ORD-1002** já foi enviado e está em trânsito com a transportadora Correios Mock. O código de rastreio é **BR100000002**. A última atualização, em 31/08/2026 (Curitiba/PR), indica que o objeto segue em trânsito para a unidade de destino. A entrega estava prevista para **03/09/2026**. Você pode acompanhar o andamento pelo rastreio acima. Qualquer outra dúvida, estou à disposição!",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "1002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1002",
+                "status": "shipped",
+                "placed_at": "2026-08-26T12:00:00Z",
+                "promised_delivery_date": "2026-09-03",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR100000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "in_transit",
+                    "latest_event": {
+                      "at": "2026-08-31T12:00:00Z",
+                      "status": "in_transit",
+                      "description": "Objeto em trânsito para a unidade de destino",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 5842.297420836985,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2034.5529999999999
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.5330000000000001
+            },
+            {
+              "node": "act",
+              "ms": 7.680000000000001
+            },
+            {
+              "node": "respond",
+              "ms": 3768.1059999999998
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "delayed",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Meu monitor, pedido ORD-2002, era pra ter chegado faz tempo. O que houve?",
+          "reply": "Pedido ORD-2002: enviado.\nPrevisão de entrega: 17/08/2026.\nO pedido está 15 dias atrasado em relação à previsão.\nTransportadora: Correios Mock, código de rastreio BR200000002.\nSituação na transportadora: atrasado. Última atualização em 16/08/2026 (Curitiba/PR): Entrega atrasada por problema operacional.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2002",
+                "status": "shipped",
+                "placed_at": "2026-08-02T12:00:00Z",
+                "promised_delivery_date": "2026-08-17",
+                "delivered_at": null,
+                "days_late": 15,
+                "shipment": {
+                  "tracking_code": "BR200000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delayed",
+                    "latest_event": {
+                      "at": "2026-08-16T12:00:00Z",
+                      "status": "delayed",
+                      "description": "Entrega atrasada por problema operacional",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 6253.068304155022,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2817.2329999999997
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.407
+            },
+            {
+              "node": "act",
+              "ms": 8.775
+            },
+            {
+              "node": "respond",
+              "ms": 3393.046
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "delivered",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "O pedido 1001 foi entregue?",
+          "reply": "Sim! O pedido ORD‑1001 foi entregue ao destinatário em 19/08/2026 (código de rastreio: BR100000001).",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "1001"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1001",
+                "status": "delivered",
+                "placed_at": "2026-08-12T12:00:00Z",
+                "promised_delivery_date": "2026-08-20",
+                "delivered_at": "2026-08-19T12:00:00Z",
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR100000001",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delivered",
+                    "latest_event": {
+                      "at": "2026-08-19T12:00:00Z",
+                      "status": "delivered",
+                      "description": "Objeto entregue ao destinatário",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 4862.295384053141,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2094.2690000000002
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.359
+            },
+            {
+              "node": "act",
+              "ms": 10.376
+            },
+            {
+              "node": "respond",
+              "ms": 2719.936
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "delivered_long_ago",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quando foi entregue o meu pedido ORD-3002?",
+          "reply": "Olá! Seu pedido **ORD-3002** foi entregue em **12/07/2026**. O código de rastreio é **BR300000002** e a previsão de entrega era **13/07/2026**. 😊",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3002",
+                "status": "delivered",
+                "placed_at": "2026-07-03T12:00:00Z",
+                "promised_delivery_date": "2026-07-13",
+                "delivered_at": "2026-07-12T12:00:00Z",
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delivered",
+                    "latest_event": {
+                      "at": "2026-07-12T12:00:00Z",
+                      "status": "delivered",
+                      "description": "Objeto entregue ao destinatário",
+                      "location": "Recife/PE"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 5036.517567932606,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2642.0
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.453
+            },
+            {
+              "node": "act",
+              "ms": 8.07
+            },
+            {
+              "node": "respond",
+              "ms": 2357.084
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "lost",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "O rastreio do ORD-1004 parou de atualizar, o que aconteceu com a minha cafeteira?",
+          "reply": "Olá! O rastreamento do seu pedido ORD-1004 (código BR100000004) indica que, desde 29/08/2026, o objeto está **extraviado** na transportadora Correios Mock. A entrega estava prevista para 30/08/2026, mas o pedido já está 2 dias atrasado em relação a essa data. \n\nEstamos acompanhando a situação e, assim que tivermos novas informações, avisaremos. Obrigado pela compreensão!",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1004",
+                "status": "shipped",
+                "placed_at": "2026-08-20T12:00:00Z",
+                "promised_delivery_date": "2026-08-30",
+                "delivered_at": null,
+                "days_late": 2,
+                "shipment": {
+                  "tracking_code": "BR100000004",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "lost",
+                    "latest_event": {
+                      "at": "2026-08-29T12:00:00Z",
+                      "status": "lost",
+                      "description": "Objeto extraviado",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 9918.950906023383,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2819.428
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.3619999999999999
+            },
+            {
+              "node": "act",
+              "ms": 8.322
+            },
+            {
+              "node": "respond",
+              "ms": 7060.704000000001
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "returned",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "A cadeira do pedido 2004 nunca chegou. Cadê ela?",
+          "reply": "Olá! O pedido ORD‑2004, que tinha previsão de entrega para 27/08/2026, foi devolvido ao remetente. A última atualização da transportadora (Correios Mock) foi em 26/08/2026, em São Paulo/SP, informando que o objeto foi devolvido. O código de rastreio é BR200000004. Por isso a cadeira ainda não chegou. Como podemos proceder para você? (reenvio, reembolso, etc.)",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "2004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2004",
+                "status": "shipped",
+                "placed_at": "2026-08-17T12:00:00Z",
+                "promised_delivery_date": "2026-08-27",
+                "delivered_at": null,
+                "days_late": 5,
+                "shipment": {
+                  "tracking_code": "BR200000004",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "returned",
+                    "latest_event": {
+                      "at": "2026-08-26T12:00:00Z",
+                      "status": "returned",
+                      "description": "Objeto devolvido ao remetente",
+                      "location": "São Paulo/SP"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 8992.676417343318,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 3557.4469999999997
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.3190000000000002
+            },
+            {
+              "node": "act",
+              "ms": 8.209
+            },
+            {
+              "node": "respond",
+              "ms": 5388.539
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "carrier_timeout_escalates",
+      "customer_id": "cus_carla",
+      "description": "The carrier times out on every attempt; the second failed turn opens a Ticket.",
+      "expected_outcome": "escalated_appropriate",
+      "observed_outcome": "escalated",
+      "escalation": "appropriate",
+      "completed": true,
+      "turns": [
+        {
+          "message": "Onde está meu pedido ORD-3003?",
+          "reply": "Olá! Seu pedido **ORD‑3003** já foi enviado. O código de rastreio é **BR300000003** e a previsão de entrega era **04/09/2026**. No momento não consegui consultar a transportadora para obter a atualização mais recente. Por favor, tente novamente em alguns minutos.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3003"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3003",
+                "status": "shipped",
+                "placed_at": "2026-08-27T12:00:00Z",
+                "promised_delivery_date": "2026-09-04",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000003",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "upstream_unavailable"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 16871.89977383241,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2972.15
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.479
+            },
+            {
+              "node": "act",
+              "ms": 10528.688
+            },
+            {
+              "node": "respond",
+              "ms": 3340.2110000000002
+            }
+          ]
+        },
+        {
+          "message": "Pode verificar de novo o ORD-3003, por favor?",
+          "reply": "Nossos sistemas estão instáveis e não consegui concluir a consulta, então vou te passar para um atendente. Abri o chamado #4 com o resumo da nossa conversa, então você não vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim que possível.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3003"
+              }
+            },
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "tool_failure"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3003"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3003",
+                "status": "shipped",
+                "placed_at": "2026-08-27T12:00:00Z",
+                "promised_delivery_date": "2026-09-04",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000003",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "upstream_unavailable"
+                }
+              }
+            },
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "tool_failure",
+                "priority": "high",
+                "summary": "Motivo: falhas repetidas na ferramenta get_order_status.\nIntenção: order_status.\nPedido em foco: ORD-3003.\nÚltimas mensagens do Customer:\n- Onde está meu pedido ORD-3003?\n- Pode verificar de novo o ORD-3003, por favor?",
+                "order_id": "ORD-3003"
+              },
+              "output": {
+                "kind": "ticket",
+                "ticket_id": 4,
+                "reason": "tool_failure",
+                "priority": "high",
+                "order_id": "ORD-3003"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 12653.294250834733,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2076.889
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.338
+            },
+            {
+              "node": "act",
+              "ms": 10525.676000000001
+            },
+            {
+              "node": "escalate",
+              "ms": 15.192
+            },
+            {
+              "node": "respond",
+              "ms": 1.877
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "carrier_error",
+      "customer_id": "cus_carla",
+      "description": "One failed lookup is answered with what the store knows, without a Ticket.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": false,
+      "turns": [
+        {
+          "message": "Qual a situação do pedido ORD-3004?",
+          "reply": "Olá! O pedido **ORD-3004** já foi enviado. O código de rastreio é **BR300000004** e a previsão de entrega era **04/09/2026**. No momento não consegui acessar a atualização mais recente do rastreio; por favor, tente novamente em alguns minutos.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3004",
+                "status": "shipped",
+                "placed_at": "2026-08-27T12:00:00Z",
+                "promised_delivery_date": "2026-09-04",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000004",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "upstream_unavailable"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [
+            "transportadora"
+          ],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 7353.4067696891725,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2583.884
+            },
+            {
+              "node": "resolve_context",
+              "ms": 3.433
+            },
+            {
+              "node": "act",
+              "ms": 1527.35
+            },
+            {
+              "node": "respond",
+              "ms": 3207.742
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "carrier_has_no_tracking",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "O rastreio do pedido 3005 não funciona, sabe me dizer onde está?",
+          "reply": "Olá! O pedido ORD‑3005 foi enviado com o código de rastreio **BR300000005**, porém a transportadora ainda não tem informações disponíveis. A previsão de entrega é **05/09/2026**. Qualquer novidade, avisaremos!",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3005"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "3005"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3005",
+                "status": "shipped",
+                "placed_at": "2026-08-28T12:00:00Z",
+                "promised_delivery_date": "2026-09-05",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000005",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "tracking_not_found"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 5483.747600577772,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2204.265
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.4369999999999998
+            },
+            {
+              "node": "act",
+              "ms": 8.116999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 3239.9049999999997
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "not_dispatched_processing",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "O pedido ORD-1003 já foi enviado?",
+          "reply": "Pedido ORD-1003: em separação.\nEle ainda não foi enviado à transportadora.\nPrevisão de entrega: 08/09/2026.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1003"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1003",
+                "status": "processing",
+                "placed_at": "2026-08-31T12:00:00Z",
+                "promised_delivery_date": "2026-09-08",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 5707.65638910234,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1934.831
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.365
+            },
+            {
+              "node": "act",
+              "ms": 6.293
+            },
+            {
+              "node": "respond",
+              "ms": 3735.465
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "not_dispatched_paid",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "E o teclado, pedido 2001? Tem código de rastreio?",
+          "reply": "Pedido ORD-2001: pagamento confirmado.\nEle ainda não foi enviado à transportadora.\nPrevisão de entrega: 07/09/2026.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "2001"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2001",
+                "status": "paid",
+                "placed_at": "2026-08-30T12:00:00Z",
+                "promised_delivery_date": "2026-09-07",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 4808.124864008278,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2348.0370000000003
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.414
+            },
+            {
+              "node": "act",
+              "ms": 6.867
+            },
+            {
+              "node": "respond",
+              "ms": 2419.464
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "pending_payment",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Meu pedido ORD-3001 não tem rastreio, por quê?",
+          "reply": "Pedido ORD-3001: aguardando pagamento.\nEle ainda não foi enviado à transportadora.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3001"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3001",
+                "status": "pending_payment",
+                "placed_at": "2026-09-01T12:00:00Z",
+                "promised_delivery_date": null,
+                "delivered_at": null,
+                "days_late": null,
+                "shipment": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 4646.427494939417,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2456.124
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.392
+            },
+            {
+              "node": "act",
+              "ms": 6.657
+            },
+            {
+              "node": "respond",
+              "ms": 2154.711
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "single_recent_order",
+      "customer_id": "cus_diego",
+      "description": "No order number, but the Customer has a single recent Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Oi, quando chega meu pedido?",
+          "reply": "Encontrei um pedido recente seu, o ORD-4001.\nPedido ORD-4001: em separação.\nEle ainda não foi enviado à transportadora.\nPrevisão de entrega: 06/09/2026.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-4001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-4001"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-4001",
+                "status": "processing",
+                "placed_at": "2026-08-30T12:00:00Z",
+                "promised_delivery_date": "2026-09-06",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 6850.639301817864,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 3666.623
+            },
+            {
+              "node": "resolve_context",
+              "ms": 6.667
+            },
+            {
+              "node": "act",
+              "ms": 7.034000000000001
+            },
+            {
+              "node": "respond",
+              "ms": 3140.6710000000003
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "which_order",
+      "customer_id": "cus_ana",
+      "description": "No order number and several recent Orders; the agent lists them and asks.",
+      "expected_outcome": "clarification",
+      "observed_outcome": "clarification",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Meu pedido ainda não chegou",
+          "reply": "Encontrei estes pedidos recentes seus:\n- ORD-1003, feito em 31/08/2026: em separação\n- ORD-1002, feito em 26/08/2026: enviado\n- ORD-1004, feito em 20/08/2026: enviado\n- ORD-1001, feito em 12/08/2026: entregue\nQual deles você quer consultar? Se for outro, me diga o número do pedido.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 3154.9215028062463,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 3112.625
+            },
+            {
+              "node": "resolve_context",
+              "ms": 6.2700000000000005
+            },
+            {
+              "node": "respond",
+              "ms": 1.692
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "which_order_then_answer",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Queria saber da minha entrega",
+          "reply": "Encontrei estes pedidos recentes seus:\n- ORD-1003, feito em 31/08/2026: em separação\n- ORD-1002, feito em 26/08/2026: enviado\n- ORD-1004, feito em 20/08/2026: enviado\n- ORD-1001, feito em 12/08/2026: entregue\nQual deles você quer consultar? Se for outro, me diga o número do pedido.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 2325.254211667925,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2277.5389999999998
+            },
+            {
+              "node": "resolve_context",
+              "ms": 8.621
+            },
+            {
+              "node": "respond",
+              "ms": 2.371
+            }
+          ]
+        },
+        {
+          "message": "É o ORD-1002",
+          "reply": "Olá! Sobre o pedido **ORD‑1002**:\n\n- **Código de rastreio:** BR100000002  \n- **Previsão de entrega:** 03/09/2026  \n- **Situação na transportadora:** em trânsito (última atualização em 31/08/2026 – Curitiba/PR: “Objeto em trânsito para a unidade de destino”).\n\nSe precisar de mais alguma coisa, estou à disposição!",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1002",
+                "status": "shipped",
+                "placed_at": "2026-08-26T12:00:00Z",
+                "promised_delivery_date": "2026-09-03",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR100000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "in_transit",
+                    "latest_event": {
+                      "at": "2026-08-31T12:00:00Z",
+                      "status": "in_transit",
+                      "description": "Objeto em trânsito para a unidade de destino",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 7317.548371385783,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 3274.33
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.691
+            },
+            {
+              "node": "act",
+              "ms": 8.177
+            },
+            {
+              "node": "respond",
+              "ms": 4004.6480000000006
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "focused_order_follow_up",
+      "customer_id": "cus_bruno",
+      "description": "The follow-up names no Order; the Focused Order carries over.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Cadê o pedido ORD-2002?",
+          "reply": "Olá! Seu pedido **ORD-2002** já foi enviado e pode ser acompanhado pelo código de rastreio **BR200000002**. A previsão de entrega era **17/08/2026**, porém está **15 dias atrasado**. A última atualização da transportadora (16/08/2026, em Curitiba/PR) indica atraso por problema operacional. Estamos acompanhando o caso e, se precisar de mais alguma coisa, é só nos avisar.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2002",
+                "status": "shipped",
+                "placed_at": "2026-08-02T12:00:00Z",
+                "promised_delivery_date": "2026-08-17",
+                "delivered_at": null,
+                "days_late": 15,
+                "shipment": {
+                  "tracking_code": "BR200000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delayed",
+                    "latest_event": {
+                      "at": "2026-08-16T12:00:00Z",
+                      "status": "delayed",
+                      "description": "Entrega atrasada por problema operacional",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 8422.729537356645,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2072.6429999999996
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.519
+            },
+            {
+              "node": "act",
+              "ms": 9.196
+            },
+            {
+              "node": "respond",
+              "ms": 6309.337
+            }
+          ]
+        },
+        {
+          "message": "E qual era a data prevista de entrega dele?",
+          "reply": "Pedido ORD-2002: enviado.\nPrevisão de entrega: 17/08/2026.\nO pedido está 15 dias atrasado em relação à previsão.\nTransportadora: Correios Mock, código de rastreio BR200000002.\nSituação na transportadora: atrasado. Última atualização em 16/08/2026 (Curitiba/PR): Entrega atrasada por problema operacional.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2002",
+                "status": "shipped",
+                "placed_at": "2026-08-02T12:00:00Z",
+                "promised_delivery_date": "2026-08-17",
+                "delivered_at": null,
+                "days_late": 15,
+                "shipment": {
+                  "tracking_code": "BR200000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delayed",
+                    "latest_event": {
+                      "at": "2026-08-16T12:00:00Z",
+                      "status": "delayed",
+                      "description": "Entrega atrasada por problema operacional",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 4085.9048003330827,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2899.437
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.497
+            },
+            {
+              "node": "act",
+              "ms": 10.525
+            },
+            {
+              "node": "respond",
+              "ms": 1144.197
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "someone_elses_order",
+      "customer_id": "cus_ana",
+      "description": "ORD-2002 is Bruno's; Ana must get the same answer as for a missing Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero saber do pedido ORD-2002",
+          "reply": "Não encontrei o pedido ORD-2002 entre os seus pedidos. Confere o número e me manda de novo?",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              },
+              "output": {
+                "kind": "error",
+                "code": "not_owned",
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 2151.3469759374857,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2103.565
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.7429999999999999
+            },
+            {
+              "node": "act",
+              "ms": 6.821
+            },
+            {
+              "node": "respond",
+              "ms": 1.77
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "unknown_order",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Onde está o pedido 9999?",
+          "reply": "Não encontrei o pedido ORD-9999 entre os seus pedidos. Confere o número e me manda de novo?",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-9999"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "9999"
+              },
+              "output": {
+                "kind": "error",
+                "code": "not_found",
+                "order_id": "ORD-9999"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 3818.6615048907697,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 3770.315
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.7489999999999999
+            },
+            {
+              "node": "act",
+              "ms": 7.575
+            },
+            {
+              "node": "respond",
+              "ms": 1.667
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "human_requested",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "escalated_appropriate",
+      "observed_outcome": "escalated",
+      "escalation": "appropriate",
+      "completed": true,
+      "turns": [
+        {
+          "message": "Não quero falar com robô, me passa para um atendente sobre o pedido ORD-2002",
+          "reply": "Combinado, vou te passar para um atendente. Abri o chamado #5 com o resumo da nossa conversa, então você não vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim que possível.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "customer_requested"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "customer_requested",
+                "priority": "normal",
+                "summary": "Motivo: o Customer pediu atendimento humano.\nIntenção: other.\nPedido em foco: nenhum.\nÚltimas mensagens do Customer:\n- Não quero falar com robô, me passa para um atendente sobre o pedido ORD-2002",
+                "order_id": null
+              },
+              "output": {
+                "kind": "ticket",
+                "ticket_id": 5,
+                "reason": "customer_requested",
+                "priority": "normal",
+                "order_id": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 5863.947548903525,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 5818.795
+            },
+            {
+              "node": "escalate",
+              "ms": 12.825
+            },
+            {
+              "node": "respond",
+              "ms": 1.539
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ],
+  "review_sample": [
+    "pending_payment",
+    "single_recent_order"
+  ]
+}
