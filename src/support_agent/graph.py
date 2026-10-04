@@ -222,7 +222,8 @@ def build_graph(
             update["clarifications"] = 0
             return update
 
-        if classification.confidence < deps.clarification_confidence:
+        # Models sure of themselves rate a vague message highly, but still flag it unclear (#27).
+        if classification.unclear or classification.confidence < deps.clarification_confidence:
             asked = state.get("clarifications", 0)
             if asked >= deps.clarifications_before_escalation:
                 update["escalation"] = TicketReason.CLARIFICATION_FAILED.value
