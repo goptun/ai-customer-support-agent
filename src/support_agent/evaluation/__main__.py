@@ -170,7 +170,11 @@ def _git_commit() -> str | None:
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
         ).stdout.strip()
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+            # Reports written earlier in the same run don't make the code dirty.
+            ["git", "status", "--porcelain", "--", ".", f":!{REPORTS}"],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
