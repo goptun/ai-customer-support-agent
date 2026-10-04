@@ -64,6 +64,10 @@ class Classification(BaseModel):
     )
     confidence: float = Field(ge=0, le=1)
     entities: Entities
+    unclear: bool = Field(
+        default=False,
+        description="True if you can't tell what the Customer wants from the message",
+    )
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,11 @@ When the Customer asks for money back, the intent is refund, even if the message
 the order is late, lost or was returned to sender: that is the reason for the refund, not a \
 separate order_status question. Use order_status only when they also ask where the order is \
 or what happened to it.
+
+Set unclear to true when you can't tell what the Customer wants: filler ("hmm", "sei lá"), \
+or a vague reference to something never named in the conversation ("e aquilo lá?", \
+"o negócio"). Then the intent is other and the agent will ask them to say it in other words. \
+A greeting, small talk or an off-topic question is clear: other, with unclear false.
 
 List every intent present, in the order raised. Extract the order number exactly as written \
 (e.g. "123", "ORD-1002"). confidence is how sure you are about the first intent."""

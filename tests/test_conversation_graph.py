@@ -16,6 +16,13 @@ def unsure(order_id: str | None = None) -> Classification:
     )
 
 
+def unclear() -> Classification:
+    """How a classifier sure of itself labels a vague message (#27)."""
+    return Classification(
+        intents=[Intent.OTHER], confidence=0.98, entities=Entities(), unclear=True
+    )
+
+
 def intents(*values: Intent, order_id: str | None = None) -> Classification:
     return Classification(
         intents=list(values), confidence=0.9, entities=Entities(order_id=order_id)
@@ -128,6 +135,32 @@ async def test_two_failed_clarifications_open_a_ticket(engine: AsyncEngine) -> N
     assert ticket.priority == "normal"
     assert "aquilo" in ticket.summary
     assert f"#{ticket.id}" in reply
+
+
+async def test_an_unclear_message_asks_a_clarification_however_confident(
+    engine: AsyncEngine,
+) -> None:
+    ana, llm, _ = agent(engine)
+    llm.on("e aquilo lá?", unclear())
+    conversation_id = await ana.new_conversation()
+
+    reply = await ana.say(conversation_id, "e aquilo lá?")
+
+    assert "não tenho certeza se entendi" in reply.lower()
+
+
+async def test_three_unclear_messages_open_a_ticket(engine: AsyncEngine) -> None:
+    ana, llm, _ = agent(engine)
+    for message in ("hmm", "aquilo", "sei lá, o negócio"):
+        llm.on(message, unclear())
+    conversation_id = await ana.new_conversation()
+
+    await ana.say(conversation_id, "hmm")
+    await ana.say(conversation_id, "aquilo")
+    await ana.say(conversation_id, "sei lá, o negócio")
+
+    [ticket] = await ana.tickets(conversation_id)
+    assert ticket.reason == "clarification_failed"
 
 
 async def test_an_understood_message_resets_the_clarifications(engine: AsyncEngine) -> None:
