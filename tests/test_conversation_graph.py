@@ -149,7 +149,9 @@ async def test_an_unclear_message_asks_a_clarification_however_confident(
     assert "não tenho certeza se entendi" in reply.lower()
 
 
-async def test_three_unclear_messages_open_a_ticket(engine: AsyncEngine) -> None:
+async def test_two_failed_clarifications_on_unclear_messages_open_a_ticket(
+    engine: AsyncEngine,
+) -> None:
     ana, llm, _ = agent(engine)
     for message in ("hmm", "aquilo", "sei lá, o negócio"):
         llm.on(message, unclear())
