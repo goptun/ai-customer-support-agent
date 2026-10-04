@@ -101,12 +101,15 @@ Intents:
 - order_status: where an order is, when it arrives, tracking, delays
 - cancel_order: wants to cancel an order
 - refund: wants money back for an order, or asks about the status of their own refund
-- faq: questions about store policies (delivery times, exchanges, returns, refund rules, \
-how long a refund takes or how the money comes back)
+- faq: questions about store policies (delivery times, exchanges, returns, the Refund Policy)
 - other: greetings, small talk, anything else
 
 A general question about how refunds work (timing, payment method, rules) is faq, not \
-refund: the Customer is asking about the policy, not for their money back.
+refund: the Customer is asking about the policy, not for their money back. When they name \
+their own refund and ask when the money lands ("meu reembolso do ORD-1004 foi aprovado, \
+quando cai?"), it is refund: they ask about the status of their own refund. When they ask \
+for money back and also how refunds work ("quero reembolso do 1001, em quanto tempo cai?"), \
+the intents are refund, then faq.
 
 When the Customer asks for money back, the intent is refund, even if the message also says \
 the order is late, lost or was returned to sender: that is the reason for the refund, not a \
