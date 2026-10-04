@@ -67,6 +67,24 @@ def status_then_refund(
     )
 
 
+def refunds_for(*orders: str | None) -> Classification:
+    """A Refund for each Order, in one message (#45)."""
+    return Classification(
+        intents=[Intent.REFUND] * len(orders),
+        confidence=0.95,
+        entities=Entities(order_ids=list(orders)),
+    )
+
+
+def status_then_refunds(status_order: str, *refund_orders: str) -> Classification:
+    """Where one Order is, then a Refund for each of the others (#45)."""
+    return Classification(
+        intents=[Intent.ORDER_STATUS, *[Intent.REFUND] * len(refund_orders)],
+        confidence=0.95,
+        entities=Entities(order_ids=[status_order, *refund_orders]),
+    )
+
+
 def faq() -> Classification:
     return Classification(intents=[Intent.FAQ], confidence=0.95, entities=Entities())
 

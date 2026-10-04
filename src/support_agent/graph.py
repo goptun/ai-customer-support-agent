@@ -207,6 +207,14 @@ def _raised(classification: Classification) -> list[tuple[Intent, str | None]]:
     return raised or [(Intent.OTHER, entities.order_id)]
 
 
+def _covers(intent: str, order_id: str | None, other: str, other_order_id: str | None) -> bool:
+    """Whether a request already takes care of another: the same Intent about the same Order.
+
+    One without an Order adds nothing next to the same Intent with one (#45).
+    """
+    return intent == other and other_order_id in {order_id, None}
+
+
 def _carry_on(update: ConversationState, item: QueuedIntent) -> None:
     """Handle a queued Intent now; what the Customer just said wins over what was queued."""
     update["intent"] = item["intent"]
@@ -271,9 +279,19 @@ def build_graph(
             if waiting is not None and order_id is None:
                 # Asked again for a queued Intent without naming an Order: that one (#30).
                 _carry_on(update, waiting)
-            queued = [item for item in queued if item["intent"] != handled]
+            # One item per (Intent, Order): the same Intent about another Order still waits (#45).
+            queued = [
+                item
+                for item in queued
+                if not _covers(handled, update["order_id"], item["intent"], item["order_id"])
+            ]
             for other, other_order_id in also_raised:
-                if other.value not in {handled, *(item["intent"] for item in queued)}:
+                raised_already = [(handled, update["order_id"])] + [
+                    (item["intent"], item["order_id"]) for item in queued
+                ]
+                if not any(
+                    _covers(*request, other.value, other_order_id) for request in raised_already
+                ):
                     queued.append(
                         QueuedIntent(
                             intent=other.value,
@@ -456,7 +474,8 @@ def build_graph(
         # A yes/no question stands alone; queued Intents are announced after the answer.
         if not queued or state.get("pending_cancellation"):
             return answer
-        return f"{answer}\n\n{render_queued([Intent(item['intent']) for item in queued])}"
+        announced = [(Intent(item["intent"]), item["order_id"]) for item in queued]
+        return f"{answer}\n\n{render_queued(announced)}"
 
     async def _answer(state: ConversationState) -> str:
         if state["intent"] == Intent.FAQ:
