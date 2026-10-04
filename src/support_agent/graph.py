@@ -271,9 +271,20 @@ def build_graph(
             if waiting is not None and order_id is None:
                 # Asked again for a queued Intent without naming an Order: that one (#30).
                 _carry_on(update, waiting)
-            queued = [item for item in queued if item["intent"] != handled]
+            # One item per (Intent, Order): the same Intent about another Order still waits (#45).
+            # A queued item without an Order is the same request, now with one.
+            queued = [
+                item
+                for item in queued
+                if item["intent"] != handled or item["order_id"] not in {update["order_id"], None}
+            ]
+            raised_already = {
+                (handled, update["order_id"]),
+                *((item["intent"], item["order_id"]) for item in queued),
+            }
             for other, other_order_id in also_raised:
-                if other.value not in {handled, *(item["intent"] for item in queued)}:
+                if (other.value, other_order_id) not in raised_already:
+                    raised_already.add((other.value, other_order_id))
                     queued.append(
                         QueuedIntent(
                             intent=other.value,
@@ -456,7 +467,8 @@ def build_graph(
         # A yes/no question stands alone; queued Intents are announced after the answer.
         if not queued or state.get("pending_cancellation"):
             return answer
-        return f"{answer}\n\n{render_queued([Intent(item['intent']) for item in queued])}"
+        announced = [(Intent(item["intent"]), item["order_id"]) for item in queued]
+        return f"{answer}\n\n{render_queued(announced)}"
 
     async def _answer(state: ConversationState) -> str:
         if state["intent"] == Intent.FAQ:

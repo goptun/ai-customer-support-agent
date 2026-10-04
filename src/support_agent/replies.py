@@ -59,6 +59,12 @@ INTENT_LABELS = {
     Intent.FAQ: "tirar uma dúvida sobre as políticas da loja",
     Intent.OTHER: "outra coisa",
 }
+# The label when the queued Intent names its Order (#45).
+INTENT_LABELS_FOR_ORDER = {
+    Intent.ORDER_STATUS: "saber o status do pedido {order_id}",
+    Intent.CANCEL_ORDER: "cancelar o pedido {order_id}",
+    Intent.REFUND: "um reembolso do pedido {order_id}",
+}
 
 # Escalation must never leave the Customer without a way forward, even if the Ticket fails.
 TICKET_FAILED = (
@@ -291,8 +297,14 @@ def render_single_recent_order(order_id: str) -> str:
     return f"Encontrei um pedido recente seu, o {order_id}."
 
 
-def render_queued(intents: list[Intent]) -> str:
-    wants = " e ".join(INTENT_LABELS[intent] for intent in intents)
+def render_queued(queued: list[tuple[Intent, str | None]]) -> str:
+    """Each queued Intent with the Order it is about, so two alike still read apart (#45)."""
+    wants = " e ".join(
+        INTENT_LABELS_FOR_ORDER[intent].format(order_id=order_id)
+        if order_id and intent in INTENT_LABELS_FOR_ORDER
+        else INTENT_LABELS[intent]
+        for intent, order_id in queued
+    )
     return f"Também vi que você quer {wants}. É só me responder que eu sigo com isso em seguida."
 
 

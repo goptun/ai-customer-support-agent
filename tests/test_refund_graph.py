@@ -222,3 +222,54 @@ async def test_orders_not_matching_the_intents_fall_back_to_the_single_order(
     )
 
     assert f"Pedido {asked_about}" in first.reply
+
+
+def refunds_for(*orders: str | None, intents: list[Intent] | None = None) -> Classification:
+    """The same Intent about several Orders, each with its own (#45)."""
+    return Classification(
+        intents=intents or [Intent.REFUND] * len(orders),
+        confidence=0.95,
+        entities=Entities(order_ids=list(orders)),
+    )
+
+
+async def test_the_same_intent_for_two_orders_queues_the_second(engine: AsyncEngine) -> None:
+    ana, llm = agent(engine)
+    first_order = await dispatched_order(engine, delivered_days_ago=3)
+    second_order = await dispatched_order(engine, delivered_days_ago=3)
+    conversation_id = await ana.new_conversation()
+    message = f"quero reembolso do {first_order} e do {second_order}"
+
+    first = await say(ana, llm, conversation_id, message, refunds_for(first_order, second_order))
+    resumed = await run_turn(ana.graph, conversation_id, ANA, "pode seguir")
+
+    assert f"um reembolso do pedido {second_order}" in first.reply
+    assert len(await approval_requests_of(engine, first_order)) == 1
+    assert resumed.intent == "refund"
+    assert len(await approval_requests_of(engine, second_order)) == 1
+
+
+async def test_asking_for_one_of_two_queued_refunds_keeps_the_other(engine: AsyncEngine) -> None:
+    ana, llm = agent(engine)
+    asked_about = await dispatched_order(engine)
+    first_order = await dispatched_order(engine, delivered_days_ago=3)
+    second_order = await dispatched_order(engine, delivered_days_ago=3)
+    conversation_id = await ana.new_conversation()
+    message = f"cadê o {asked_about}? e quero reembolso do {first_order} e do {second_order}"
+    status_and_two_refunds = refunds_for(
+        asked_about,
+        first_order,
+        second_order,
+        intents=[Intent.ORDER_STATUS, Intent.REFUND, Intent.REFUND],
+    )
+    await say(ana, llm, conversation_id, message, status_and_two_refunds)
+
+    picked = await say(
+        ana, llm, conversation_id, f"segue com o do {second_order}", refund(second_order)
+    )
+    resumed = await run_turn(ana.graph, conversation_id, ANA, "pode seguir")
+
+    assert len(await approval_requests_of(engine, second_order)) == 1
+    assert f"um reembolso do pedido {first_order}" in picked.reply
+    assert resumed.intent == "refund"
+    assert len(await approval_requests_of(engine, first_order)) == 1
