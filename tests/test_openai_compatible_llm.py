@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx2
 import pytest
+from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from pydantic import SecretStr
 
@@ -32,8 +33,9 @@ HISTORY = [ConversationMessage(role="user", content="Cadê o pedido ORD-1002?")]
 class FakeEndpoint:
     """Answers every chat completion with the next scripted content; keeps the requests."""
 
-    def __init__(self, *contents: str) -> None:
+    def __init__(self, *contents: str, finish_reason: str = "stop") -> None:
         self._contents: Iterator[str] = iter(contents)
+        self._finish_reason = finish_reason
         self.requests: list[dict[str, Any]] = []
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
@@ -49,7 +51,7 @@ class FakeEndpoint:
                 "choices": [
                     {
                         "index": 0,
-                        "finish_reason": "stop",
+                        "finish_reason": self._finish_reason,
                         "message": {"role": "assistant", "content": next(self._contents)},
                     }
                 ],
@@ -134,6 +136,58 @@ async def test_responds_with_the_reply_text_given_the_facts() -> None:
     [request] = endpoint.requests
     assert request["model"] == "responder"
     assert "Previsão de entrega: 03/09/2026." in request["messages"][0]["content"]
+
+
+async def test_a_reply_cut_by_the_length_limit_is_no_reply() -> None:
+    # A cut reply may still be grounded ("O rastreio ... indica que") and say nothing.
+    endpoint = FakeEndpoint(
+        "Olá! O rastreio do seu pedido ORD-1004 (BR100000004) indica que", finish_reason="length"
+    )
+
+    reply = await llm(endpoint).respond(HISTORY, "Código de rastreio BR100000004.")
+
+    assert reply == ""
+
+
+async def test_a_confirm_cut_by_the_length_limit_is_not_a_yes() -> None:
+    endpoint = FakeEndpoint('{"decision": "confirm"}', finish_reason="length")
+
+    assert await llm(endpoint).classify_confirmation(HISTORY) is Confirmation.OTHER
+
+
+async def test_every_call_sets_its_own_token_limit() -> None:
+    # Left unset, the routed provider applies its own default (256 tokens on Cloudflare's
+    # gpt-oss-120b), which its reasoning alone can use up.
+    endpoint = FakeEndpoint("Seu pedido chega em 03/09/2026.")
+
+    await llm(endpoint).respond(HISTORY, "Previsão de entrega: 03/09/2026.")
+
+    [request] = endpoint.requests
+    assert request["max_tokens"] >= 1024
+
+
+async def test_an_anthropic_reply_cut_by_the_token_limit_is_no_reply() -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": "responder",
+                "content": [{"type": "text", "text": "O rastreio do ORD-1004 indica que"}],
+                "stop_reason": "max_tokens",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    client = AsyncAnthropic(
+        api_key="test", http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle))
+    )
+    anthropic_llm = AnthropicLLM(client, classifier_model="classifier", responder_model="responder")
+
+    assert await anthropic_llm.respond(HISTORY, "Código de rastreio BR100000004.") == ""
 
 
 TURN = JudgedTurn(message="Cadê o 1002?", reply="Chega amanhã.", tool_outputs=[])
