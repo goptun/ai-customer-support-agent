@@ -80,13 +80,12 @@ async def test_each_node_of_a_turn_is_traced_under_the_conversation(
     [turn] = langsmith.named(TURN_RUN_NAME)
     assert turn["extra"]["metadata"]["conversation_id"] == str(conversation_id)
     for node in ("classify_intent", "resolve_context", "act", "respond"):
-        # The LLM's own `respond` run shares the node's name.
-        [span] = [run for run in langsmith.named(node) if run["run_type"] != "llm"]
+        [span] = langsmith.named(node)
         assert span["parent_run_id"] == turn["id"]
         assert span["inputs"]["messages"]
         finished = langsmith.updated[str(span["id"])]
         assert finished["end_time"] >= span["start_time"]
-    respond = langsmith.updated[str(span["id"])]
+    respond = langsmith.updated[str(langsmith.named("respond")[0]["id"])]
     assert "ORD-1002" in respond["outputs"]["messages"][-1].content
 
 

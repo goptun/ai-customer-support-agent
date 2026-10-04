@@ -17,10 +17,8 @@ from pydantic import BaseModel
 
 from support_agent.evaluation.dataset import AttendantDecision, ScriptedConversation
 from support_agent.graph import TURN_RUN_NAME
+from support_agent.llm import RESPONDER_RUN_NAME
 from support_agent.seed import ATTENDANTS
-
-# The traced LLM method that writes order-status and knowledge base replies.
-RESPONDER_RUN_NAME = "respond"
 
 
 class ToolCall(BaseModel):
