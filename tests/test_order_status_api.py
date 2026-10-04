@@ -131,11 +131,82 @@ async def test_reply_with_facts_absent_from_tool_output_is_replaced(
 
 
 async def test_grounded_llm_reply_is_kept(client: AsyncClient, llm: ScriptedLLM) -> None:
-    grounded = "Oi! O ORD-1002 está em trânsito e a previsão é 03/09/2026."
+    grounded = "Oi! O ORD-1002 está em trânsito (rastreio BR100000002), previsão 03/09/2026."
 
     reply = await ask(client, llm, "cus_ana", "e aí, 1002?", "1002", llm_reply=grounded)
 
     assert reply == grounded
+
+
+@pytest.mark.parametrize(
+    ("customer_id", "order_id", "incomplete", "missing"),
+    [
+        pytest.param(
+            "cus_ana",
+            "1002",
+            "O ORD-1002 está em trânsito e chega até 03/09/2026.",
+            "BR100000002",
+            id="in_transit_without_tracking_code",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2002",
+            "O ORD-2002 (rastreio BR200000002) está 15 dias atrasado, desculpe!",
+            "17/08/2026",
+            id="delayed_without_promised_date",
+        ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1001",
+            "Boa notícia: o ORD-1001 já foi entregue!",
+            "19/08/2026",
+            id="delivered_without_delivery_date",
+        ),
+    ],
+)
+async def test_reply_leaving_out_a_required_fact_is_replaced(
+    client: AsyncClient,
+    llm: ScriptedLLM,
+    customer_id: str,
+    order_id: str,
+    incomplete: str,
+    missing: str,
+) -> None:
+    reply = await ask(client, llm, customer_id, "e o meu pedido?", order_id, llm_reply=incomplete)
+
+    assert reply != incomplete
+    assert missing in reply
+
+
+@pytest.mark.parametrize(
+    ("customer_id", "order_id", "complete"),
+    [
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Sinto muito: a transportadora informou que o ORD-1004 (BR100000004) foi extraviado.",
+            id="lost_needs_only_the_tracking_code",
+        ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1003",
+            "O ORD-1003 está em separação, ainda não saiu da loja. Previsão: 08/09/2026.",
+            id="not_dispatched_needs_only_the_promised_date",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3001",
+            "O ORD-3001 está aguardando pagamento, por isso ainda não tem rastreio.",
+            id="pending_payment_needs_nothing",
+        ),
+    ],
+)
+async def test_reply_with_every_required_fact_is_kept(
+    client: AsyncClient, llm: ScriptedLLM, customer_id: str, order_id: str, complete: str
+) -> None:
+    reply = await ask(client, llm, customer_id, "e o meu pedido?", order_id, llm_reply=complete)
+
+    assert reply == complete
 
 
 async def test_order_status_without_an_order_number_offers_recent_orders(

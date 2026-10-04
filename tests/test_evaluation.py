@@ -404,6 +404,9 @@ conversations:
 """
 
 
+LLM_WORDING = "O ORD-1002 (rastreio BR100000002) está a caminho, previsão 03/09/2026."
+
+
 async def test_only_the_wording_the_llm_wrote_is_judged(
     client: AsyncClient, llm: ScriptedLLM
 ) -> None:
@@ -411,7 +414,7 @@ async def test_only_the_wording_the_llm_wrote_is_judged(
     llm.on("[eval] cancela o 1002", cancel_order("1002"))
     # A date the facts don't have: the reply falls back to the facts template.
     llm.on("[eval] quando chega o 1002?", order_status("1002"), reply="Chega em 25/12/2030.")
-    llm.on("[eval] cadê o 1002?", order_status("1002"), reply="O ORD-1002 está a caminho.")
+    llm.on("[eval] cadê o 1002?", order_status("1002"), reply=LLM_WORDING)
     judge = FlagsReplies("ORD-1002")
 
     report = await evaluate(
@@ -419,7 +422,7 @@ async def test_only_the_wording_the_llm_wrote_is_judged(
     )
 
     # Refund and Cancellation replies are templates rendered from the tool outputs.
-    assert [turn.reply for turn in judge.judged] == ["O ORD-1002 está a caminho."]
+    assert [turn.reply for turn in judge.judged] == [LLM_WORDING]
     results = {result.id: result for result in report.conversations}
     for template in ("refund_template", "cancellation_template", "ungrounded_fallback"):
         [turn] = results[template].turns

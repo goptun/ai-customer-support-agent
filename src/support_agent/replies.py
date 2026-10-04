@@ -2,7 +2,8 @@
 
 The facts rendered here are the only source the responder may draw on. A reply that
 mentions a date, amount or day count absent from the facts, or a status the facts don't
-state, is discarded in favour of the facts themselves.
+state, is discarded in favour of the facts themselves; so is one that leaves out a fact the
+Customer needs (its Shipment's tracking code or the Order's relevant date).
 """
 
 import re
@@ -300,10 +301,16 @@ class Facts:
     # Status labels the Order is actually in; compared structurally, since the text may
     # mention a status only to negate it ("ainda não foi enviado").
     statuses: frozenset[str] = frozenset()
+    # Literals the reply must repeat: without them it doesn't answer the Customer.
+    required: frozenset[str] = frozenset()
 
 
 def render_order_status(result: OrderStatusResult) -> Facts:
-    return Facts(text=_order_status_text(result), statuses=_current_statuses(result))
+    return Facts(
+        text=_order_status_text(result),
+        statuses=_current_statuses(result),
+        required=_required_facts(result),
+    )
 
 
 def render_knowledge(result: KnowledgeBaseResult) -> Facts:
@@ -330,6 +337,27 @@ def _current_statuses(result: OrderStatusResult) -> frozenset[str]:
     if result.days_late:
         statuses.add(SHIPMENT_STATUS_LABELS[ShipmentStatus.DELAYED])
     return frozenset(statuses)
+
+
+_WONT_ARRIVE = (ShipmentStatus.LOST, ShipmentStatus.RETURNED)
+
+
+def _required_facts(result: OrderStatusResult) -> frozenset[str]:
+    if result.status is OrderStatus.CANCELLED:
+        return frozenset()
+    if result.delivered_at is not None:
+        return frozenset({_format_date(result.delivered_at)})
+    required = set()
+    shipment = result.shipment
+    if shipment is not None:
+        required.add(shipment.tracking_code)
+        tracking = shipment.tracking
+        if tracking is not None and tracking.status in _WONT_ARRIVE:
+            # The promised date no longer answers anything.
+            return frozenset(required)
+    if result.promised_delivery_date is not None:
+        required.add(_format_date(result.promised_delivery_date))
+    return frozenset(required)
 
 
 def _order_status_text(result: OrderStatusResult) -> str:
@@ -395,3 +423,15 @@ def is_grounded(reply: str, facts: Facts) -> bool:
         word.casefold() in folded_statuses for word in _STATUS_WORDS.findall(reply)
     )
     return literals_grounded and statuses_grounded
+
+
+def is_complete(reply: str, facts: Facts) -> bool:
+    """True if the reply repeats every fact the Customer needs."""
+    folded_reply = reply.casefold()
+    return all(fact.casefold() in folded_reply for fact in facts.required)
+
+
+def grounded_reply(reply: str, facts: Facts) -> str:
+    """The LLM's reply if it is grounded and complete, otherwise the facts themselves."""
+    usable = reply.strip() and is_grounded(reply, facts) and is_complete(reply, facts)
+    return reply if usable else facts.text

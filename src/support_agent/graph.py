@@ -37,7 +37,7 @@ from support_agent.replies import (
     KNOWLEDGE_NOT_FOUND,
     TICKET_FAILED,
     cite_sources,
-    is_grounded,
+    grounded_reply,
     render_cancellation_dropped,
     render_cancellation_kept,
     render_cancellation_question,
@@ -478,7 +478,7 @@ def build_graph(
             return render_error(result)
         facts = render_order_status(result)
         reply = await deps.llm.respond(_history(state, deps.history_window), facts.text)
-        return reply if reply.strip() and is_grounded(reply, facts) else facts.text
+        return grounded_reply(reply, facts)
 
     async def _knowledge_reply(state: ConversationState) -> str:
         result = _knowledge_result.validate_python(state["tool_result"])
@@ -490,8 +490,7 @@ def build_graph(
             _history(state, deps.history_window),
             f"Pergunta do Customer: {state['query']}\n\n{facts.text}",
         )
-        grounded = reply if reply.strip() and is_grounded(reply, facts) else facts.text
-        return cite_sources(grounded, result)
+        return cite_sources(grounded_reply(reply, facts), result)
 
     def after_classify(
         state: ConversationState,
