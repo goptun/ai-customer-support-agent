@@ -261,6 +261,18 @@ async def test_reply_leaving_out_a_required_fact_is_replaced(
             "05/09/2026.",
             id="no_tracking_needs_the_carrier",
         ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Infelizmente o ORD-1004 (BR100000004) foi extraviado e não vai chegar.",
+            id="negation_after_the_fact_is_not_a_contradiction",
+        ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Não, ele foi extraviado: a transportadora perdeu o ORD-1004 (BR100000004).",
+            id="negation_in_another_clause_is_not_a_contradiction",
+        ),
     ],
 )
 async def test_reply_with_every_required_fact_is_kept(
@@ -269,6 +281,63 @@ async def test_reply_with_every_required_fact_is_kept(
     reply = await ask(client, llm, customer_id, "e o meu pedido?", order_id, llm_reply=complete)
 
     assert reply == complete
+
+
+@pytest.mark.parametrize(
+    ("customer_id", "order_id", "contradicting", "fact"),
+    [
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Fique tranquilo: seu pedido ORD-1004 (BR100000004) não foi extraviado.",
+            "extraviado",
+            id="lost_said_not_lost",
+        ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "O ORD-1004 (BR100000004) não teve extravio, só está demorando.",
+            "extraviado",
+            id="lost_said_no_extravio",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2004",
+            "O ORD-2004 (rastreio BR200000004) nunca foi devolvido, segue a caminho.",
+            "devolvido",
+            id="returned_said_never_returned",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2004",
+            "O ORD-2004 (rastreio BR200000004) nem foi devolvido, está com a Correios.",
+            "devolvido",
+            id="returned_said_nem_returned",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3004",
+            "O ORD-3004 (rastreio BR300000004) tem previsão para 04/09/2026, e o atraso no "
+            "rastreio não é da transportadora.",
+            "transportadora",
+            id="carrier_error_said_not_the_carrier",
+        ),
+    ],
+)
+async def test_reply_negating_a_required_fact_is_replaced(
+    client: AsyncClient,
+    llm: ScriptedLLM,
+    customer_id: str,
+    order_id: str,
+    contradicting: str,
+    fact: str,
+) -> None:
+    reply = await ask(
+        client, llm, customer_id, "e o meu pedido?", order_id, llm_reply=contradicting
+    )
+
+    assert reply != contradicting
+    assert fact in reply
 
 
 async def test_order_status_without_an_order_number_offers_recent_orders(
