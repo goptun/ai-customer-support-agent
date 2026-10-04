@@ -176,6 +176,22 @@ async def test_grounded_llm_reply_is_kept(client: AsyncClient, llm: ScriptedLLM)
             "devolvido",
             id="returned_without_saying_so",
         ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3004",
+            "O ORD-3004 (rastreio BR300000004) tem previsão para 04/09/2026. No momento não "
+            "consegui acessar a atualização mais recente do rastreio.",
+            "transportadora",
+            id="carrier_error_without_blaming_the_carrier",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3005",
+            "O ORD-3005 (rastreio BR300000005) tem previsão para 05/09/2026. Ainda não há "
+            "informações de rastreio.",
+            "transportadora",
+            id="no_tracking_without_naming_the_carrier",
+        ),
     ],
 )
 async def test_reply_leaving_out_a_required_fact_is_replaced(
@@ -230,6 +246,20 @@ async def test_reply_leaving_out_a_required_fact_is_replaced(
             "ORD-3001",
             "O ORD-3001 está aguardando pagamento, por isso ainda não tem rastreio.",
             id="pending_payment_needs_nothing",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3004",
+            "Não consegui consultar a transportadora agora. O ORD-3004 (rastreio BR300000004) "
+            "tem previsão para 04/09/2026.",
+            id="carrier_error_needs_the_carrier",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3005",
+            "A transportadora ainda não tem rastreio do ORD-3005 (BR300000005). Previsão: "
+            "05/09/2026.",
+            id="no_tracking_needs_the_carrier",
         ),
     ],
 )
