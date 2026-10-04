@@ -162,6 +162,20 @@ async def test_grounded_llm_reply_is_kept(client: AsyncClient, llm: ScriptedLLM)
             "19/08/2026",
             id="delivered_without_delivery_date",
         ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Olá! O rastreio do seu pedido ORD-1004 (código de rastreio BR100000004) indica que",
+            "extraviado",
+            id="lost_without_saying_so",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2004",
+            "O ORD-2004 (rastreio BR200000004) está com a transportadora Correios.",
+            "devolvido",
+            id="returned_without_saying_so",
+        ),
     ],
 )
 async def test_reply_leaving_out_a_required_fact_is_replaced(
@@ -185,7 +199,25 @@ async def test_reply_leaving_out_a_required_fact_is_replaced(
             "cus_ana",
             "ORD-1004",
             "Sinto muito: a transportadora informou que o ORD-1004 (BR100000004) foi extraviado.",
-            id="lost_needs_only_the_tracking_code",
+            id="lost_needs_the_tracking_code_and_the_loss",
+        ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "A transportadora registrou o extravio do ORD-1004 (rastreio BR100000004).",
+            id="lost_may_say_extravio",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2004",
+            "O ORD-2004 (rastreio BR200000004) foi devolvido ao remetente pela transportadora.",
+            id="returned_needs_the_tracking_code_and_the_return",
+        ),
+        pytest.param(
+            "cus_bruno",
+            "ORD-2004",
+            "A transportadora fez a devolução do ORD-2004 (rastreio BR200000004) à loja.",
+            id="returned_may_say_devolucao",
         ),
         pytest.param(
             "cus_ana",
