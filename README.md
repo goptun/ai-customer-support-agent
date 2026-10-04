@@ -163,11 +163,22 @@ LANGSMITH_API_KEY=lsv2_...   # smith.langchain.com → Settings → API Keys
 LANGSMITH_PROJECT=support-agent
 ```
 
-Each Customer message is one trace named `conversation_turn` (filter by `conversation_id` in its metadata) with a span per graph node — latency, inputs and outputs — and the Claude calls as LLM spans inside them. Outside Docker, export the variables (e.g. `uv run --env-file .env ...`): LangSmith reads the process environment, not `.env`.
+Each Customer message is one trace named `conversation_turn` (filter by `conversation_id` in its metadata) with a span per graph node — latency, inputs and outputs — and the Claude calls and tool calls (args and result) as LLM and tool spans inside them. Outside Docker, export the variables (e.g. `uv run --env-file .env ...`): LangSmith reads the process environment, not `.env`.
 
 ## Evaluation
 
-Not built yet: the evaluation suite (labelled Conversations against the real LLM, one command, committed reports) is tracked in #11 and #12, which will document how to run it here.
+Scripted Conversations run against the real models, one command, run by hand (never in CI):
+
+```sh
+uv run python -m support_agent.evaluation                                 # every dataset
+uv run python -m support_agent.evaluation eval/datasets/order_status.yaml # one dataset
+```
+
+It needs `ANTHROPIC_API_KEY` (environment or `.env`) and Docker: it starts throwaway Postgres and Redis containers (or uses `EVAL_DATABASE_URL` / `EVAL_REDIS_URL`, which must be disposable: the run seeds them and writes Conversations and Tickets), seeds them, indexes the Knowledge Base with the real embedding model and drives the app in process through `/chat`, with the logistics mock and the seed's clock (today = 01/09/2026). `--judge-model` picks the judge (default Sonnet 5.5).
+
+- **Datasets** (`eval/datasets/*.yaml`): each Conversation has a seeded Customer, fixed Customer turns and an expected outcome (`resolved | escalated_appropriate | clarification`); each turn may label the expected Intent, tool calls (name + the args that matter) and facts the reply must contain. Format notes at the top of `order_status.yaml`, which covers every logistics scenario above plus finding the Order, ownership and a human requested.
+- **Metrics**: task completion (expected outcome and every required fact), tool-call accuracy per turn against the gold calls (retries collapsed, order ids in any format), Intent accuracy, p50/p95 latency end to end and per node, hallucination rate (an LLM judge lists reply claims the turn's tool outputs don't support) and escalation rate split into appropriate vs avoidable. Tool calls and node timings come from the turn's trace, recorded in process: no LangSmith account needed and nothing is sent.
+- **Reports**: `eval/reports/<date>-<dataset>.json` and `.md`, with the model ids and commit, plus a ~10% sample of Conversations for a human to check the judge on. Commit them to compare runs over time.
 
 ## Develop
 
