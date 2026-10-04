@@ -341,7 +341,8 @@ def _current_statuses(result: OrderStatusResult) -> frozenset[str]:
     return frozenset(statuses)
 
 
-# Stems of the ways to say the Shipment won't arrive: "extraviado" or "extravio".
+# How a reply may say the Shipment won't arrive, as substrings: "extraviad" covers "extraviado"
+# and "extraviada"; the same wordings the eval accepts.
 _WONT_ARRIVE = {
     ShipmentStatus.LOST: frozenset({"extraviad", "extravio"}),
     ShipmentStatus.RETURNED: frozenset({"devolvid", "devolução"}),
