@@ -17,8 +17,9 @@ from support_agent.evaluation.dataset import Dataset, load_dataset, parse_datase
 from support_agent.evaluation.judge import JudgedTurn, Verdict
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, evaluate, percentile
+from support_agent.evaluation.seeded import reset
 from support_agent.llm import Classification, Confirmation, Entities, Intent
-from support_agent.seed import CUSTOMERS, reset
+from support_agent.seed import CUSTOMERS
 
 from .fakes import ScriptedLLM, cancel_order, order_status, refund
 
@@ -178,6 +179,11 @@ def test_a_conversation_needs_a_known_outcome_and_turns() -> None:
         )
     with pytest.raises(ValidationError):
         parse_dataset("name: bad\nconversations:\n  - {id: x, customer_id: cus_ana, turns: []}\n")
+    with pytest.raises(ValidationError):  # an Attendant can't reject without a reason
+        parse_dataset(
+            "name: bad\nconversations:\n  - {id: x, customer_id: cus_ana, outcome: resolved,"
+            " turns: [{message: oi, attendant: {decision: reject}}]}\n"
+        )
 
 
 CANCELS_TWICE = """

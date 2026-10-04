@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from support_agent.evaluation.dataset import AttendantDecision, ScriptedConversation
 from support_agent.graph import TURN_RUN_NAME
+from support_agent.seed import ATTENDANTS
 
 
 class ToolCall(BaseModel):
@@ -30,7 +31,7 @@ class NodeTiming(BaseModel):
 
 
 # The Attendant who decides Approval Requests in scripted Conversations.
-ATTENDANT_ID = "att_julia"
+ATTENDANT_ID = ATTENDANTS[0]["id"]
 
 
 class TurnRun(BaseModel):

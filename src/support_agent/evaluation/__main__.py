@@ -34,10 +34,11 @@ from support_agent.evaluation.dataset import Dataset, load_dataset
 from support_agent.evaluation.judge import AnthropicJudge, OpenAICompatibleJudge, build_judge
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, Report, evaluate
+from support_agent.evaluation.seeded import reset
 from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
 from support_agent.llm import LLM, build_llm
 from support_agent.logistics_mock import create_app as create_logistics_mock
-from support_agent.seed import ANCHOR, reset, seed
+from support_agent.seed import ANCHOR, seed
 
 DATASETS = Path("eval/datasets")
 REPORTS = Path("eval/reports")
