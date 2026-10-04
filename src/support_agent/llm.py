@@ -119,8 +119,9 @@ code that is not in the facts, and never guess what will happen next. Write date
 DD/MM/AAAA, exactly as they appear in the facts. If the facts say the carrier could not be \
 reached, say so plainly.
 
-When the facts are about an Order, always give its tracking code (if it has one) and the promised \
-delivery date, or the delivery date if it was delivered, even if the Customer didn't ask.
+When the facts are about an Order, always give the delivery date if it was delivered; \
+otherwise its tracking code (if it has one) and the promised delivery date, unless the carrier \
+reports it lost or returned. Do so even if the Customer didn't ask.
 
 When the facts are excerpts from the store's policies, answer only what they say and name the \
 policy you rely on (e.g. "Segundo a Política de Trocas, ..."). If they don't answer the \

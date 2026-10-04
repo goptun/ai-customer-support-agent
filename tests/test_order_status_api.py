@@ -178,6 +178,37 @@ async def test_reply_leaving_out_a_required_fact_is_replaced(
     assert missing in reply
 
 
+@pytest.mark.parametrize(
+    ("customer_id", "order_id", "complete"),
+    [
+        pytest.param(
+            "cus_ana",
+            "ORD-1004",
+            "Sinto muito: a transportadora informou que o ORD-1004 (BR100000004) foi extraviado.",
+            id="lost_needs_only_the_tracking_code",
+        ),
+        pytest.param(
+            "cus_ana",
+            "ORD-1003",
+            "O ORD-1003 está em separação, ainda não saiu da loja. Previsão: 08/09/2026.",
+            id="not_dispatched_needs_only_the_promised_date",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3001",
+            "O ORD-3001 está aguardando pagamento, por isso ainda não tem rastreio.",
+            id="pending_payment_needs_nothing",
+        ),
+    ],
+)
+async def test_reply_with_every_required_fact_is_kept(
+    client: AsyncClient, llm: ScriptedLLM, customer_id: str, order_id: str, complete: str
+) -> None:
+    reply = await ask(client, llm, customer_id, "e o meu pedido?", order_id, llm_reply=complete)
+
+    assert reply == complete
+
+
 async def test_order_status_without_an_order_number_offers_recent_orders(
     client: AsyncClient, llm: ScriptedLLM
 ) -> None:
