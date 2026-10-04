@@ -101,7 +101,7 @@ Intents:
 - order_status: where an order is, when it arrives, tracking, delays
 - cancel_order: wants to cancel an order
 - refund: wants money back for an order, or asks about the status of their own refund
-- faq: questions about store policies (delivery times, exchanges, returns, the Refund Policy)
+- faq: questions about store policies (delivery times, exchanges, returns, how refunds work)
 - other: greetings, small talk, anything else
 
 A general question about how refunds work (timing, payment method, rules) is faq, not \

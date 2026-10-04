@@ -161,7 +161,7 @@ conversations:
     outcome: resolved
     description: >-
       Asks when the money of their own approved Refund lands: the status of their Refund,
-      not the Refund Policy.
+      not how refunds work.
     turns:
       - message: "Quero reembolso do pedido ORD-1004, foi extraviado"
         intent: refund
