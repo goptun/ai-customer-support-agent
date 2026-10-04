@@ -21,7 +21,7 @@ from support_agent.graph import TURN_RUN_NAME
 from support_agent.llm import RESPONDER_RUN_NAME
 from support_agent.replies import (
     Facts,
-    Fallback,
+    FallbackReason,
     fallback_reason,
     render_knowledge,
     render_order_status,
@@ -54,7 +54,9 @@ class ResponderFallback(BaseModel):
     """A responder LLM reply discarded for the facts it was given."""
 
     llm_reply: str
-    reason: Fallback | None  # None if the facts can't be rebuilt from the turn's tool calls
+    # None if the facts can't be rebuilt from the turn's tool calls; no failed checks if the
+    # rebuilt facts pass it, so they differ from the ones the responder node checked.
+    reason: FallbackReason | None
 
 
 class TurnRun(BaseModel):
@@ -135,13 +137,7 @@ async def run_conversation(
                     if node.end_time is not None
                 ],
                 llm_wording=llm_wording,
-                fallback=(
-                    None
-                    if llm_reply is None or llm_wording is not None
-                    else ResponderFallback(
-                        llm_reply=llm_reply, reason=_fallback_reason(llm_reply, tool_calls)
-                    )
-                ),
+                fallback=_fallback(llm_reply, llm_wording, tool_calls),
             )
         )
     return ConversationRun(id=conversation.id, turns=turns)
@@ -191,7 +187,16 @@ def _responder_reply(turn_run: RunTree) -> str | None:
     return str((responses[-1].outputs or {}).get("output") or "").strip()
 
 
-def _fallback_reason(llm_reply: str, tool_calls: list[ToolCall]) -> Fallback | None:
+def _fallback(
+    llm_reply: str | None, llm_wording: str | None, tool_calls: list[ToolCall]
+) -> ResponderFallback | None:
+    """What the responder LLM wrote, and why, if the reply fell back to the facts."""
+    if llm_reply is None or llm_wording is not None:
+        return None
+    return ResponderFallback(llm_reply=llm_reply, reason=_fallback_reason(llm_reply, tool_calls))
+
+
+def _fallback_reason(llm_reply: str, tool_calls: list[ToolCall]) -> FallbackReason | None:
     """Why the reply was discarded, checked against the facts the responder was given.
 
     The facts are rebuilt from the tool output they were rendered from, the way the responder
@@ -204,7 +209,7 @@ def _fallback_reason(llm_reply: str, tool_calls: list[ToolCall]) -> Fallback | N
         elif call.name == search_knowledge_base.__name__:
             facts = _facts(call, KnowledgeBaseResult, render_knowledge)
         if facts is not None:
-            return fallback_reason(llm_reply, facts)
+            return fallback_reason(llm_reply, facts) or FallbackReason()
     return None
 
 

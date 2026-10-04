@@ -10,6 +10,7 @@ lost or returned it).
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, computed_field
 
@@ -484,7 +485,11 @@ def _unaffirmed(reply: str, facts: Facts) -> list[list[str]]:
     )
 
 
-class Fallback(BaseModel):
+# The checks an LLM reply must pass to be used instead of the facts.
+Check = Literal["empty", "grounded", "complete"]
+
+
+class FallbackReason(BaseModel):
     """Why an LLM reply was discarded in favour of the facts."""
 
     empty: bool = False
@@ -493,19 +498,23 @@ class Fallback(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def checks(self) -> list[str]:
+    def checks(self) -> list[Check]:
         """The checks the reply failed."""
-        failed = {"empty": self.empty, "grounded": self.ungrounded, "complete": self.unaffirmed}
+        failed: dict[Check, object] = {
+            "empty": self.empty,
+            "grounded": self.ungrounded,
+            "complete": self.unaffirmed,
+        }
         return [check for check, failing in failed.items() if failing]
 
 
-def fallback_reason(reply: str, facts: Facts) -> Fallback | None:
+def fallback_reason(reply: str, facts: Facts) -> FallbackReason | None:
     """Why the reply can't be used, or None if it is grounded and complete."""
     if not reply.strip():
-        return Fallback(empty=True)
+        return FallbackReason(empty=True)
     ungrounded, unaffirmed = _ungrounded(reply, facts), _unaffirmed(reply, facts)
     if ungrounded or unaffirmed:
-        return Fallback(ungrounded=ungrounded, unaffirmed=unaffirmed)
+        return FallbackReason(ungrounded=ungrounded, unaffirmed=unaffirmed)
     return None
 
 

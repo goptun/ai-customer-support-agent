@@ -140,7 +140,10 @@ def _fallbacks(results: Sequence[ConversationResult]) -> list[str]:
                     "complete": "complete: "
                     + "; ".join(" | ".join(wordings) for wordings in reason.unaffirmed),
                 }
-                why = ", ".join(failed[check] for check in reason.checks)
+                why = (
+                    ", ".join(failed[check] for check in reason.checks)
+                    or "passes every check on the rebuilt facts"
+                )
             lines += [f"- `{result.id}` turn {number}: {why}", ""]
             lines += [
                 f"  > {line}" if line else "  >" for line in turn.fallback.llm_reply.splitlines()

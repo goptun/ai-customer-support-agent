@@ -1,6 +1,6 @@
 """Why an LLM reply is discarded for the facts: the grounded and complete checks."""
 
-from support_agent.replies import Facts, Fallback, fallback_reason, grounded_reply
+from support_agent.replies import Facts, FallbackReason, fallback_reason, grounded_reply
 
 FACTS = Facts(
     text=(
@@ -23,7 +23,7 @@ def test_an_ungrounded_reply_names_the_tokens_beyond_the_facts() -> None:
 
     reason = fallback_reason(reply, FACTS)
 
-    assert reason == Fallback(ungrounded=["entregue", "R$ 10,00", "5 dias"])
+    assert reason == FallbackReason(ungrounded=["entregue", "R$ 10,00", "5 dias"])
     assert reason.checks == ["grounded"]
     assert grounded_reply(reply, FACTS) == FACTS.text
 
@@ -33,7 +33,7 @@ def test_an_incomplete_reply_names_the_facts_it_leaves_out_or_negates() -> None:
 
     reason = fallback_reason(reply, FACTS)
 
-    assert reason == Fallback(unaffirmed=[["03/09/2026"], ["BR100000002"]])
+    assert reason == FallbackReason(unaffirmed=[["03/09/2026"], ["BR100000002"]])
     assert reason.checks == ["complete"]
     assert grounded_reply(reply, FACTS) == FACTS.text
 
@@ -43,7 +43,7 @@ def test_a_reply_can_fail_both_checks() -> None:
 
     reason = fallback_reason(reply, FACTS)
 
-    assert reason == Fallback(
+    assert reason == FallbackReason(
         ungrounded=["25/12/2030"], unaffirmed=[["03/09/2026"], ["BR100000002"]]
     )
     assert reason.checks == ["grounded", "complete"]
@@ -52,5 +52,5 @@ def test_a_reply_can_fail_both_checks() -> None:
 def test_an_empty_reply_falls_back() -> None:
     reason = fallback_reason("  ", Facts(text="Pedido ORD-1001: cancelado."))
 
-    assert reason == Fallback(empty=True)
+    assert reason == FallbackReason(empty=True)
     assert reason.checks == ["empty"]
