@@ -29,6 +29,7 @@ def render_markdown(report: Report) -> str:
         "| Metric | Value |",
         "|---|---|",
         f"| Task completion | {_pct(summary.task_completion_rate)} |",
+        f"| Conversations failed to run | {summary.conversations_failed} |",
         f"| Tool-call accuracy (per turn) | {_pct(summary.tool_call_accuracy)} |",
         f"| Intent accuracy (per turn) | {_pct(summary.intent_accuracy)} |",
         f"| Hallucination rate ({summary.judged_turns} judged turns) "
@@ -91,6 +92,9 @@ def _conversation_row(result: ConversationResult) -> str:
 def _issues(results: Sequence[ConversationResult]) -> list[str]:
     issues = []
     for result in results:
+        if result.error:
+            issues.append(f"- `{result.id}`: Failed to run: {result.error}")
+            continue
         if result.observed_outcome != result.expected_outcome.observed_as:
             issues.append(
                 f"- `{result.id}`: expected {result.expected_outcome.value}, "
@@ -107,6 +111,8 @@ def _issues(results: Sequence[ConversationResult]) -> list[str]:
                 )
             if turn.missing_facts:
                 issues.append(f"{where}: missing facts {turn.missing_facts}")
+            if turn.judge_error:
+                issues.append(f"{where}: Judge failed: {turn.judge_error}")
             if turn.verdict and turn.verdict.hallucinated:
                 issues.append(f"{where}: unsupported claims {turn.verdict.unsupported_claims}")
     return issues
@@ -129,6 +135,9 @@ def _transcript(result: ConversationResult) -> list[str]:
         for text in [*turn.notices, turn.reply]:
             lines += [f"> {line}" if line else ">" for line in text.splitlines()]
         lines.append("")
+        if turn.judge_error:
+            lines += [f"_Judge failed: {turn.judge_error}_", ""]
+            continue
         if turn.verdict is None:
             lines += ["_No tool output: not judged._", ""]
             continue

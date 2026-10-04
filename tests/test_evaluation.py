@@ -314,3 +314,60 @@ def test_every_dataset_scripts_seeded_customers_with_unique_ids() -> None:
         "search_knowledge_base",
         "create_support_ticket",
     }
+
+
+class FailsOn(FlagsReplies):
+    """Fake judge that times out on replies mentioning `marker`."""
+
+    async def judge(self, turn: JudgedTurn) -> Verdict:
+        if self.marker in turn.reply:
+            raise TimeoutError("judge timed out")
+        return Verdict(hallucinated=False, unsupported_claims=[])
+
+
+ONE_FAILS = """
+name: failures
+conversations:
+  - id: unknown_customer
+    customer_id: cus_nobody
+    outcome: resolved
+    turns: [{message: "[eval] cadê o 1002?"}]
+  - id: judge_times_out
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[eval] cadê o 1002?"
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+  - id: still_runs
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "[eval] e o 3003?"
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3003}}]
+"""
+
+
+async def test_a_conversation_that_errors_fails_alone(
+    client: AsyncClient, llm: ScriptedLLM
+) -> None:
+    script(llm)
+
+    report = await evaluate(
+        client, parse_dataset(ONE_FAILS), FailsOn("ORD-1002"), models=MODELS, started_at=STARTED_AT
+    )
+
+    results = {result.id: result for result in report.conversations}
+    assert results["unknown_customer"].observed_outcome == "failed"
+    assert results["unknown_customer"].error
+    assert not results["unknown_customer"].completed
+    # The reply was scored; only its hallucination check is missing.
+    [turn] = results["judge_times_out"].turns
+    assert turn.verdict is None
+    assert turn.judge_error
+    assert results["judge_times_out"].completed
+    assert results["still_runs"].completed
+    assert report.summary.conversations_failed == 1
+    assert report.summary.judged_turns == 1
+    markdown = render_markdown(report)
+    assert "Failed to run" in markdown
+    assert "Judge failed" in markdown
