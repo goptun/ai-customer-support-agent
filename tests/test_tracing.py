@@ -89,6 +89,21 @@ async def test_each_node_of_a_turn_is_traced_under_the_conversation(
     assert "ORD-1002" in respond["outputs"]["messages"][-1].content
 
 
+async def test_tool_calls_are_traced_with_their_args_and_result(
+    engine: AsyncEngine, tracing_env: pytest.MonkeyPatch
+) -> None:
+    tracing_env.setenv("LANGSMITH_TRACING", "true")
+    with recording() as langsmith:
+        await ask_for_order_1002(engine)
+
+    [act] = langsmith.named("act")
+    [tool] = langsmith.named("get_order_status")
+    assert tool["run_type"] == "tool"
+    assert tool["parent_run_id"] == act["id"]
+    assert tool["inputs"] == {"args": {"order_id": "1002"}}
+    assert langsmith.updated[str(tool["id"])]["outputs"]["order_id"] == "ORD-1002"
+
+
 async def test_nothing_is_traced_without_the_env_vars(
     engine: AsyncEngine, tracing_env: pytest.MonkeyPatch
 ) -> None:

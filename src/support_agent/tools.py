@@ -2,7 +2,7 @@
 
 Every tool validates its (LLM-produced) arguments with Pydantic and returns a typed result or
 a ToolError. Tools touching Orders take the Customer from the authenticated run context and
-check Order ownership.
+check Order ownership. Each call is a tool span (args and result) when tracing is on.
 """
 
 import asyncio
@@ -12,8 +12,9 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal, cast
 
+from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from support_agent.cancellations import (
@@ -207,6 +208,18 @@ class SearchKnowledgeBaseArgs(BaseModel):
         return value.strip()
 
 
+def _tool[**P, R: BaseModel](call: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+    # Only the args the agent passed: deps are plumbing, the Customer is in the turn metadata.
+    def inputs(given: dict[str, Any]) -> dict[str, Any]:
+        return {"args": dict(given["args"])}
+
+    def outputs(result: Any) -> dict[str, Any]:
+        return result.model_dump(mode="json") if isinstance(result, BaseModel) else result
+
+    traced = traceable(run_type="tool", process_inputs=inputs, process_outputs=outputs)(call)
+    return cast(Callable[P, Awaitable[R]], traced)  # same call signature, plus langsmith_extra
+
+
 def days_late(promised: date | None, delivered_at: datetime | None, today: date) -> int | None:
     if promised is None:
         return None
@@ -214,6 +227,7 @@ def days_late(promised: date | None, delivered_at: datetime | None, today: date)
     return max(0, (reference - promised).days)
 
 
+@_tool
 async def get_order_status(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> OrderStatusResult | ToolError:
@@ -270,6 +284,7 @@ def _refused(refusal: CancellationRefusal, order_id: str) -> ToolError:
     return ToolError(code=REFUSAL_CODES[refusal], order_id=order_id)
 
 
+@_tool
 async def preview_cancellation(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> CancellationPreview | ToolError:
@@ -287,6 +302,7 @@ async def preview_cancellation(
     return CancellationPreview(order_id=order_id, refund_cents=plan.refund_cents)
 
 
+@_tool
 async def cancel_order(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> CancellationResult | ToolError:
@@ -306,6 +322,7 @@ async def cancel_order(
     return result
 
 
+@_tool
 async def create_refund(
     deps: ToolDeps, customer_id: str, conversation_id: uuid.UUID, args: Mapping[str, object]
 ) -> RefundRequested | RefundRefused | ToolError:
@@ -353,6 +370,7 @@ async def create_refund(
     return result
 
 
+@_tool
 async def get_refund_status(
     deps: ToolDeps, customer_id: str, args: Mapping[str, object]
 ) -> RefundStatusResult | ToolError:
@@ -370,6 +388,7 @@ async def get_refund_status(
     )
 
 
+@_tool
 async def create_support_ticket(
     deps: ToolDeps, customer_id: str, conversation_id: uuid.UUID, args: Mapping[str, object]
 ) -> TicketResult | ToolError:
@@ -403,6 +422,7 @@ async def create_support_ticket(
     )
 
 
+@_tool
 async def search_knowledge_base(
     knowledge_base: KnowledgeBase, args: Mapping[str, object]
 ) -> KnowledgeBaseResult | ToolError:
