@@ -7,6 +7,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      LOGISTICS_URL: http://logistics:8080
     ports:
       - "127.0.0.1:8003:8000"
     depends_on:
@@ -14,6 +15,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      logistics:
+        condition: service_started
+    restart: unless-stopped
+
+  # Mock carrier: deterministic scenarios by tracking code. No published port.
+  logistics:
+    build: .
+    entrypoint: ["uvicorn"]
+    command: ["support_agent.logistics_mock:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]
     restart: unless-stopped
 
   postgres:

@@ -51,6 +51,23 @@ class Conversations:
                 raise ConversationNotFound
             return found.id
 
+    async def messages(self, conversation_id: uuid.UUID) -> list[Message]:
+        """The Conversation's messages in order; `open` checks it is the Customer's first."""
+        async with self._sessions() as session:
+            return list(
+                (
+                    await session.scalars(
+                        select(Message)
+                        .where(Message.conversation_id == conversation_id)
+                        .order_by(Message.id)
+                    )
+                ).all()
+            )
+
+    async def forget(self, conversation_id: uuid.UUID) -> None:
+        """Drop the working state of a Conversation written to elsewhere; it is rebuilt."""
+        await self._redis.delete(self._key(conversation_id))
+
     async def record(
         self,
         conversation_id: uuid.UUID,

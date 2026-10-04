@@ -1,9 +1,30 @@
 import enum
 import uuid
 from datetime import date, datetime
+from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Date, DateTime, Enum, ForeignKey, String, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Output size of the embedding model; changing the model needs a migration.
+EMBEDDING_DIM = 384
 
 
 class Base(DeclarativeBase):
@@ -19,9 +40,44 @@ class OrderStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+# Dispatched = handed to the carrier; before that an Order can still be Cancelled.
+NOT_DISPATCHED = frozenset({OrderStatus.PENDING_PAYMENT, OrderStatus.PAID, OrderStatus.PROCESSING})
+
+
 class MessageRole(enum.StrEnum):
     CUSTOMER = "customer"
     AGENT = "agent"
+
+
+class TicketReason(enum.StrEnum):
+    CUSTOMER_REQUESTED = "customer_requested"
+    TOOL_FAILURE = "tool_failure"
+    CLARIFICATION_FAILED = "clarification_failed"
+
+
+class TicketPriority(enum.StrEnum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class RefundStatus(enum.StrEnum):
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    ISSUED = "issued"
+    REJECTED = "rejected"
+
+
+class ApprovalStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ActorType(enum.StrEnum):
+    CUSTOMER = "customer"
+    ATTENDANT = "attendant"
+    SYSTEM = "system"
 
 
 def _enum(cls: type[enum.StrEnum], name: str) -> Enum:
@@ -34,6 +90,13 @@ class Customer(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(320), unique=True)
+
+
+class Attendant(Base):
+    __tablename__ = "attendants"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
 
 
 class Order(Base):
@@ -77,3 +140,110 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     intent: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # ticket:{conversation_id}:{reason}; a repeat returns the original Ticket
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    order_id: Mapped[str | None] = mapped_column(ForeignKey("orders.id"))
+    reason: Mapped[TicketReason] = mapped_column(_enum(TicketReason, "ticket_reason"))
+    priority: Mapped[TicketPriority] = mapped_column(_enum(TicketPriority, "ticket_priority"))
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Refund(Base):
+    __tablename__ = "refunds"
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_refunds_amount_positive"),
+        # At most one Refund awaiting approval per Order: a repeated request finds it.
+        Index(
+            "uq_refunds_one_pending_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status = 'pending_approval'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # cancel:{order_id} for a Cancellation's Refund, refund:{approval_request_id} otherwise
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
+    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[RefundStatus] = mapped_column(_enum(RefundStatus, "refund_status"))
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Cancellation(Base):
+    __tablename__ = "cancellations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # cancel:{order_id}; a repeat returns the original Cancellation
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), unique=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"))  # None: unpaid
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ApprovalRequest(Base):
+    """A Refund the Refund Policy found eligible, awaiting an Attendant's decision.
+
+    Its approval workflow runs on the graph thread `approval:{id}` (ADR-0002).
+    """
+
+    __tablename__ = "approval_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    refund_id: Mapped[int] = mapped_column(ForeignKey("refunds.id"), unique=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    # Where the decision is relayed to the Customer.
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    status: Mapped[ApprovalStatus] = mapped_column(_enum(ApprovalStatus, "approval_status"))
+    # The Refund Policy's result (ground, max, requested, capped), shown to the Attendant.
+    policy_result: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey("attendants.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(Text)  # required on rejection
+    # When the resumed workflow appended the decision to the Conversation.
+    relayed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When the Customer was shown it (next message, polling or a new Conversation).
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditLogEntry(Base):
+    """Append-only (enforced by a trigger): one entry per side effect."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    actor_type: Mapped[ActorType] = mapped_column(_enum(ActorType, "actor_type"))
+    actor_id: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    inputs: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class KnowledgeChunk(Base):
+    """One section of a Knowledge Base policy document, with its embedding."""
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (UniqueConstraint("document", "position"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    document: Mapped[str] = mapped_column(String(100), index=True)  # source file stem
+    position: Mapped[int] = mapped_column(Integer)  # section order within the document
+    title: Mapped[str] = mapped_column(String(200))
+    section: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))  # sha256 of what was embedded
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))

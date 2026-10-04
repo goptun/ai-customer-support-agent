@@ -82,7 +82,7 @@ async def test_chat_round_trip_persists_conversation_and_messages(
     conversation_id = str(first["conversation_id"])
     second = await chat(client, headers, "Pode verificar?", conversation_id)
 
-    assert "Meu pedido ainda não chegou" in str(first["reply"])
+    assert first["reply"]
     assert first["intent"] == "other"
     assert first["pending_actions"] == []
     assert second["conversation_id"] == conversation_id

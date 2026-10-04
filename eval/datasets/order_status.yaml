@@ -1,0 +1,204 @@
+# Order status: every logistics scenario of the seeded Orders (README, "Logistics scenarios"),
+# plus finding the Order (single recent Order, Clarification, Focused Order), ownership and a
+# Customer who asks for a human. Dates follow the seed's anchor (today = 01/09/2026).
+#
+# Per turn: `intent` and `facts` are optional; `tool_calls` defaults to none expected. Only the
+# listed args are compared, and order ids in any format ("1002", "ORD-1002") match.
+# A fact is a substring the reply must contain (case-insensitive); a list means any one of them.
+name: order_status
+conversations:
+  - id: in_transit
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Oi! Meu pedido ORD-1002 já saiu? Quando chega?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+        facts: ["03/09/2026", "BR100000002"]
+
+  - id: in_transit_number_only
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "cadê o pedido 1002?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+        facts: ["03/09/2026", ["em trânsito", "a caminho"]]
+
+  - id: delayed
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "Meu monitor, pedido ORD-2002, era pra ter chegado faz tempo. O que houve?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2002}}]
+        facts: ["17/08/2026", ["atrasad", "atraso"]]
+
+  - id: delivered
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "O pedido 1001 foi entregue?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1001}}]
+        facts: ["19/08/2026", "entregue"]
+
+  - id: delivered_long_ago
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "Quando foi entregue o meu pedido ORD-3002?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3002}}]
+        facts: ["12/07/2026"]
+
+  - id: lost
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "O rastreio do ORD-1004 parou de atualizar, o que aconteceu com a minha cafeteira?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1004}}]
+        facts: [["extraviad", "extravio"]]
+
+  - id: returned
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "A cadeira do pedido 2004 nunca chegou. Cadê ela?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2004}}]
+        facts: [["devolvid", "devolução"]]
+
+  - id: carrier_timeout_escalates
+    customer_id: cus_carla
+    outcome: escalated_appropriate
+    description: The carrier times out on every attempt; the second failed turn opens a Ticket.
+    turns:
+      - message: "Onde está meu pedido ORD-3003?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3003}}]
+        facts: ["transportadora"]
+      - message: "Pode verificar de novo o ORD-3003, por favor?"
+        intent: order_status
+        tool_calls:
+          - {name: get_order_status, args: {order_id: ORD-3003}}
+          - {name: create_support_ticket, args: {reason: tool_failure}}
+        facts: ["chamado"]
+
+  - id: carrier_error
+    customer_id: cus_carla
+    outcome: resolved
+    description: One failed lookup is answered with what the store knows, without a Ticket.
+    turns:
+      - message: "Qual a situação do pedido ORD-3004?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3004}}]
+        facts: ["04/09/2026", "transportadora"]
+
+  - id: carrier_has_no_tracking
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "O rastreio do pedido 3005 não funciona, sabe me dizer onde está?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3005}}]
+        facts: ["05/09/2026", "BR300000005"]
+
+  - id: not_dispatched_processing
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "O pedido ORD-1003 já foi enviado?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1003}}]
+        facts: ["08/09/2026", ["ainda não", "não foi enviado"]]
+
+  - id: not_dispatched_paid
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "E o teclado, pedido 2001? Tem código de rastreio?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2001}}]
+        facts: ["07/09/2026"]
+
+  - id: pending_payment
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "Meu pedido ORD-3001 não tem rastreio, por quê?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3001}}]
+        facts: ["pagamento"]
+
+  - id: single_recent_order
+    customer_id: cus_diego
+    outcome: resolved
+    description: No order number, but the Customer has a single recent Order.
+    turns:
+      - message: "Oi, quando chega meu pedido?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-4001}}]
+        facts: ["ORD-4001", "06/09/2026"]
+
+  - id: which_order
+    customer_id: cus_ana
+    outcome: clarification
+    description: No order number and several recent Orders; the agent lists them and asks.
+    turns:
+      - message: "Meu pedido ainda não chegou"
+        intent: order_status
+        facts: ["ORD-1002", "ORD-1004"]
+
+  - id: which_order_then_answer
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Queria saber da minha entrega"
+        intent: order_status
+        facts: ["ORD-1002"]
+      - message: "É o ORD-1002"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+        facts: ["03/09/2026"]
+
+  - id: focused_order_follow_up
+    customer_id: cus_bruno
+    outcome: resolved
+    description: The follow-up names no Order; the Focused Order carries over.
+    turns:
+      - message: "Cadê o pedido ORD-2002?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2002}}]
+      - message: "E qual era a data prevista de entrega dele?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2002}}]
+        facts: ["17/08/2026"]
+
+  - id: someone_elses_order
+    customer_id: cus_ana
+    outcome: resolved
+    description: ORD-2002 is Bruno's; Ana must get the same answer as for a missing Order.
+    turns:
+      - message: "Quero saber do pedido ORD-2002"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2002}}]
+        facts: ["não encontrei"]
+
+  - id: unknown_order
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Onde está o pedido 9999?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-9999}}]
+        facts: ["não encontrei"]
+
+  - id: human_requested
+    customer_id: cus_bruno
+    outcome: escalated_appropriate
+    turns:
+      - message: "Não quero falar com robô, me passa para um atendente sobre o pedido ORD-2002"
+        tool_calls: [{name: create_support_ticket, args: {reason: customer_requested}}]
+        facts: ["chamado"]

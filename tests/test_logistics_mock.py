@@ -1,0 +1,50 @@
+import httpx
+import pytest
+
+from support_agent.logistics import (
+    CarrierUnavailable,
+    LogisticsClient,
+    ShipmentStatus,
+    TrackingNotFound,
+)
+from support_agent.logistics_mock import create_app
+
+
+def client() -> LogisticsClient:
+    http = httpx.AsyncClient(
+        base_url="http://logistics.test",
+        transport=httpx.ASGITransport(app=create_app(timeout_delay_seconds=5)),
+    )
+    return LogisticsClient(http, timeout_seconds=0.1)
+
+
+@pytest.mark.parametrize(
+    ("tracking_code", "status", "latest_description"),
+    [
+        ("BR100000002", ShipmentStatus.IN_TRANSIT, "Objeto em trânsito para a unidade de destino"),
+        ("BR200000002", ShipmentStatus.DELAYED, "Entrega atrasada por problema operacional"),
+        ("BR100000001", ShipmentStatus.DELIVERED, "Objeto entregue ao destinatário"),
+        ("BR100000004", ShipmentStatus.LOST, "Objeto extraviado"),
+        ("BR200000004", ShipmentStatus.RETURNED, "Objeto devolvido ao remetente"),
+    ],
+)
+async def test_tracking_scenarios_are_deterministic_by_code(
+    tracking_code: str, status: ShipmentStatus, latest_description: str
+) -> None:
+    first = await client().track(tracking_code)
+    again = await client().track(tracking_code)
+
+    assert first == again
+    assert first.status is status
+    assert first.latest_event.description == latest_description
+
+
+async def test_failure_scenarios() -> None:
+    with pytest.raises(CarrierUnavailable):
+        await client().track("BR300000003")  # timeout
+    with pytest.raises(CarrierUnavailable):
+        await client().track("BR300000004")  # 500
+    with pytest.raises(TrackingNotFound):
+        await client().track("BR300000005")  # 404
+    with pytest.raises(TrackingNotFound):
+        await client().track("BR999999999")  # unknown code

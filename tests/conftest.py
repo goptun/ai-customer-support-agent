@@ -1,5 +1,6 @@
 import os
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 
 import pytest
 from alembic import command
@@ -11,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from support_agent.api import create_app
 from support_agent.config import Settings
 from support_agent.db import session_factory
-from support_agent.seed import seed
+from support_agent.knowledge import index_policies, load_policies
+from support_agent.logistics_mock import create_app as create_logistics_mock
+from support_agent.seed import ANCHOR, seed
+
+from .fakes import KNOWLEDGE_MIN_SCORE, LexicalEmbedder, ScriptedLLM
 
 TEST_JWT_SECRET = "test-secret-with-enough-length-for-hs256"
 
@@ -39,7 +44,15 @@ def infra_urls() -> Iterator[tuple[str, str]]:
 @pytest.fixture(scope="session")
 def settings(infra_urls: tuple[str, str]) -> Settings:
     database_url, redis_url = infra_urls
-    return Settings(database_url=database_url, redis_url=redis_url, jwt_secret=TEST_JWT_SECRET)
+    return Settings(
+        database_url=database_url,
+        redis_url=redis_url,
+        jwt_secret=TEST_JWT_SECRET,
+        logistics_url="http://logistics.test",
+        logistics_timeout_seconds=0.2,
+        tool_retry_backoff_seconds=0,
+        knowledge_min_score=KNOWLEDGE_MIN_SCORE,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -52,16 +65,38 @@ def migrated(settings: Settings) -> None:
 @pytest.fixture(scope="session")
 async def engine(settings: Settings, migrated: None) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(settings.database_url)
-    await seed(session_factory(engine))
+    sessions = session_factory(engine)
+    await seed(sessions)
+    await index_policies(sessions, LexicalEmbedder(), load_policies())
     yield engine
     await engine.dispose()
 
 
 @pytest.fixture(scope="session")
-async def client(settings: Settings, engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
-    app = create_app(settings)
+def llm() -> ScriptedLLM:
+    return ScriptedLLM()
+
+
+@asynccontextmanager
+async def app_client(settings: Settings, llm: ScriptedLLM) -> AsyncIterator[AsyncClient]:
+    """A freshly built app and a client for it; a second one stands in for a restart."""
+    app = create_app(
+        settings,
+        llm=llm,
+        embedder=LexicalEmbedder(),
+        logistics_transport=ASGITransport(app=create_logistics_mock(timeout_delay_seconds=5)),
+        today=ANCHOR.date,
+    )
     async with (
         LifespanManager(app) as manager,
         AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as client,
     ):
+        yield client
+
+
+@pytest.fixture(scope="session")
+async def client(
+    settings: Settings, engine: AsyncEngine, llm: ScriptedLLM
+) -> AsyncIterator[AsyncClient]:
+    async with app_client(settings, llm) as client:
         yield client
