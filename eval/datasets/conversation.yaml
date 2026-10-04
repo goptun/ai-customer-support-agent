@@ -13,7 +13,7 @@ conversations:
       - message: "O pedido ORD-1003 já saiu? Se não saiu, quero cancelar."
         intent: order_status
         tool_calls: [{name: get_order_status, args: {order_id: ORD-1003}}]
-        facts: ["cancelar um pedido"]
+        facts: ["cancelar o pedido ORD-1003"]
       - message: "Pode seguir"
         intent: cancel_order
         tool_calls: [{name: preview_cancellation, args: {order_id: ORD-1003}}]
