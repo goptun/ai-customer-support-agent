@@ -46,6 +46,11 @@ class Entities(BaseModel):
     order_id: str | None = Field(
         default=None, description="Order number exactly as the Customer wrote it, if any"
     )
+    order_ids: list[str | None] = Field(
+        default_factory=list,
+        description="For each intent, in the same order, the order number it is about as "
+        "written, or null if none",
+    )
     requested_amount_cents: int | None = Field(
         default=None, description="Refund amount the Customer asked for, in cents, if any"
     )
@@ -114,7 +119,9 @@ or a vague reference to something never named in the conversation ("e aquilo lá
 A greeting, small talk or an off-topic question is clear: other, with unclear false.
 
 List every intent present, in the order raised. Extract the order number exactly as written \
-(e.g. "123", "ORD-1002"). confidence is how sure you are about the first intent."""
+(e.g. "123", "ORD-1002"), only when the last message names it. When intents are about \
+different orders ("onde está o 1002? e quero reembolso do 1001"), order_ids gives each \
+intent its own: ["1002", "1001"]. confidence is how sure you are about the first intent."""
 
 CONFIRM_SYSTEM = """\
 The support agent of a Brazilian online store asked the Customer to confirm an action \

@@ -1,6 +1,7 @@
 """Refund through the graph: the policy's answer, approval off the Conversation thread, status."""
 
 import uuid
+from collections.abc import Callable
 
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from support_agent.graph import Turn, run_turn
 from support_agent.llm import Classification, Entities, Intent
 
-from .fakes import ScriptedLLM, order_status, refund
+from .fakes import ScriptedLLM, order_status, refund, status_then_refund
 from .test_escalation_graph import Agent, ScriptedCarrier
 from .test_refund_tools import approval_requests_of, dispatched_order, refunds_of
 
@@ -157,3 +158,67 @@ async def test_queued_refund_keeps_the_amount_asked_for(engine: AsyncEngine) -> 
     assert resumed.intent == "refund"
     assert "R$ 50,00" in resumed.reply
     assert [r.amount_cents for r in await refunds_of(engine, order_id)] == [5000]
+
+
+async def status_and_refund_queued(
+    engine: AsyncEngine, c: Callable[[str, str], Classification]
+) -> tuple[Agent, ScriptedLLM, uuid.UUID, Turn, str, str]:
+    """Ana asks where one Order is and for a Refund of another; the Refund is queued."""
+    ana, llm = agent(engine)
+    asked_about = await dispatched_order(engine)
+    to_refund = await dispatched_order(engine, delivered_days_ago=3)
+    conversation_id = await ana.new_conversation()
+    message = f"cadê o {asked_about}? e quero reembolso do {to_refund}"
+    first = await say(ana, llm, conversation_id, message, c(asked_about, to_refund))
+    return ana, llm, conversation_id, first, asked_about, to_refund
+
+
+async def test_queued_refund_is_for_the_order_named_with_it(engine: AsyncEngine) -> None:
+    ana, _, conversation_id, first, asked_about, to_refund = await status_and_refund_queued(
+        engine, status_then_refund
+    )
+
+    resumed = await run_turn(ana.graph, conversation_id, ANA, "pode seguir")
+
+    assert f"Pedido {asked_about}" in first.reply
+    assert resumed.intent == "refund"
+    assert len(await approval_requests_of(engine, to_refund)) == 1
+    assert await approval_requests_of(engine, asked_about) == []
+
+
+async def test_asking_again_for_the_queued_refund_carries_on_with_it(engine: AsyncEngine) -> None:
+    ana, llm, conversation_id, _, asked_about, to_refund = await status_and_refund_queued(
+        engine, lambda status, refund: status_then_refund(status, refund, amount_cents=5000)
+    )
+
+    resumed = await say(ana, llm, conversation_id, "ok, pode seguir com o reembolso", refund())
+
+    assert resumed.intent == "refund"
+    assert [r.amount_cents for r in await refunds_of(engine, to_refund)] == [5000]
+    assert await approval_requests_of(engine, asked_about) == []
+
+
+async def test_an_intent_without_its_own_order_does_not_take_the_next_ones(
+    engine: AsyncEngine,
+) -> None:
+    _, _, _, first, _, to_refund = await status_and_refund_queued(
+        engine, lambda _, refund: status_then_refund(None, refund, order_id=refund)
+    )
+
+    assert first.intent == "order_status"
+    assert f"Pedido {to_refund}" not in first.reply
+
+
+async def test_orders_not_matching_the_intents_fall_back_to_the_single_order(
+    engine: AsyncEngine,
+) -> None:
+    _, _, _, first, asked_about, _ = await status_and_refund_queued(
+        engine,
+        lambda status, _: Classification(
+            intents=[Intent.ORDER_STATUS, Intent.REFUND],
+            confidence=0.95,
+            entities=Entities(order_id=status, order_ids=[status]),
+        ),
+    )
+
+    assert f"Pedido {asked_about}" in first.reply
