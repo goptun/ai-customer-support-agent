@@ -14,6 +14,7 @@ from typing import Literal, Protocol
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field, ValidationError
@@ -226,7 +227,7 @@ async def complete(
             messages.append({"role": "assistant", "content": m.content})
     response = await client.chat.completions.create(model=model, messages=messages)
     content = response.choices[0].message.content if response.choices else None
-    return _THINKING.sub("", content or "").strip()
+    return _without_reasoning(content or "").strip()
 
 
 def json_system(system: str, schema: type[BaseModel]) -> str:
@@ -236,19 +237,35 @@ def json_system(system: str, schema: type[BaseModel]) -> str:
     )
 
 
-_THINKING = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.DOTALL)
+_REASONING_END = re.compile(r"</think(?:ing)?>")
+_REASONING_START = re.compile(r"<think(?:ing)?>")
+
+
+def _without_reasoning(text: str) -> str:
+    """What follows the model's reasoning, if it shows any: a draft is never the answer.
+
+    Some models omit the opening tag; reasoning cut off before its closing tag is no answer.
+    """
+    ends = list(_REASONING_END.finditer(text))
+    if ends:
+        return text[ends[-1].end() :]
+    return "" if _REASONING_START.search(text) else text
 
 
 def parse_json_reply[M: BaseModel](text: str, schema: type[M]) -> M | None:
-    """The first JSON object in the reply that fits the schema, or None."""
+    """The JSON object in the reply that fits the schema, or None if there is none, or
+    several that disagree (a model weighing options hasn't answered)."""
     decoder = json.JSONDecoder()
+    found: list[M] = []
     for start in (match.start() for match in re.finditer(r"\{", text)):
         try:
             value, _ = decoder.raw_decode(text, start)
-            return schema.model_validate(value)
+            found.append(schema.model_validate(value))
         except (json.JSONDecodeError, ValidationError):
             continue
-    return None
+    if not found or any(other != found[0] for other in found[1:]):
+        return None
+    return found[0]
 
 
 def build_llm(settings: Settings) -> LLM:
@@ -275,4 +292,6 @@ def openai_client(settings: Settings) -> AsyncOpenAI:
         raise RuntimeError("LLM_BASE_URL is required with LLM_PROVIDER=openai_compatible")
     # A local router may not check keys, but the SDK wants a non-empty one.
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else "not-needed"
-    return AsyncOpenAI(base_url=settings.llm_base_url, api_key=key, timeout=60.0)
+    client = AsyncOpenAI(base_url=settings.llm_base_url, api_key=key, timeout=60.0)
+    # Traces each completion with the model that answered: with a combo, it varies per call.
+    return wrap_openai(client)

@@ -113,6 +113,11 @@ async def test_an_unparseable_classification_is_an_unconfident_other() -> None:
         ('{"decision": "deny"}', Confirmation.DENY),
         ("sim, pode cancelar", Confirmation.OTHER),  # not JSON: never a yes
         ('{"decision": "yes"}', Confirmation.OTHER),
+        # A reasoning draft is not the answer, even when its opening tag is missing.
+        ('pensando: {"decision": "confirm"}</think>{"decision": "other"}', Confirmation.OTHER),
+        ('<think>{"decision": "confirm"}', Confirmation.OTHER),  # truncated mid-reasoning
+        # Weighing options isn't an explicit answer.
+        ('se sim: {"decision": "confirm"}; se não: {"decision": "deny"}', Confirmation.OTHER),
     ],
 )
 async def test_only_a_parsed_confirm_confirms(content: str, expected: Confirmation) -> None:

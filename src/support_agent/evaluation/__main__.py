@@ -30,17 +30,16 @@ from support_agent.api import create_app
 from support_agent.config import Settings
 from support_agent.db import session_factory
 from support_agent.evaluation.dataset import Dataset, load_dataset
-from support_agent.evaluation.judge import build_judge
+from support_agent.evaluation.judge import AnthropicJudge, OpenAICompatibleJudge, build_judge
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, Report, evaluate
 from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
-from support_agent.llm import build_llm
+from support_agent.llm import LLM, build_llm
 from support_agent.logistics_mock import create_app as create_logistics_mock
 from support_agent.seed import ANCHOR, seed
 
 DATASETS = Path("eval/datasets")
 REPORTS = Path("eval/reports")
-JUDGE_MODEL = "claude-sonnet-5-5"  # on an OpenAI-compatible endpoint: the responder model
 
 
 def main() -> None:
@@ -48,7 +47,7 @@ def main() -> None:
     parser.add_argument(
         "datasets", nargs="*", type=Path, help=f"YAML datasets (default: all in {DATASETS}/)"
     )
-    parser.add_argument("--judge-model")
+    parser.add_argument("--judge-model", help="default: Sonnet, or the responder model")
     parser.add_argument("--out", type=Path, default=REPORTS)
     parser.add_argument("--seed", type=int, default=0, help="seed of the human review sample")
     args = parser.parse_args()
@@ -63,12 +62,9 @@ def main() -> None:
         logistics_url="http://logistics.eval",
     )
     try:
-        build_llm(settings)  # fails fast if the provider isn't configured
-    except RuntimeError as error:
+        llm, judge = build_llm(settings), build_judge(settings, args.judge_model)
+    except RuntimeError as error:  # the provider isn't configured
         parser.error(str(error))
-    judge_model = args.judge_model or (
-        settings.responder_model if settings.llm_provider == "openai_compatible" else JUDGE_MODEL
-    )
 
     with _infrastructure() as (database_url, redis_url):
         settings = settings.model_copy(
@@ -77,7 +73,7 @@ def main() -> None:
         config = Config("alembic.ini")
         config.set_main_option("sqlalchemy.url", settings.database_url)
         command.upgrade(config, "head")
-        asyncio.run(_evaluate(settings, datasets, judge_model, args.out, args.seed))
+        asyncio.run(_evaluate(settings, llm, judge, datasets, args.out, args.seed))
 
 
 @contextmanager
@@ -102,7 +98,12 @@ def _infrastructure() -> Iterator[tuple[str, str]]:
 
 
 async def _evaluate(
-    settings: Settings, datasets: list[Dataset], judge_model: str, out: Path, sample_seed: int
+    settings: Settings,
+    llm: LLM,
+    judge: AnthropicJudge | OpenAICompatibleJudge,
+    datasets: list[Dataset],
+    out: Path,
+    sample_seed: int,
 ) -> None:
     embedder = await asyncio.to_thread(FastEmbedEmbedder, settings.embedding_model)
     engine = create_async_engine(settings.database_url)
@@ -115,7 +116,7 @@ async def _evaluate(
 
     app = create_app(
         settings,
-        llm=build_llm(settings),
+        llm=llm,
         embedder=embedder,
         logistics_transport=ASGITransport(app=create_logistics_mock()),
         today=ANCHOR.date,
@@ -124,9 +125,8 @@ async def _evaluate(
         provider=settings.llm_provider,
         classifier=settings.classifier_model,
         responder=settings.responder_model,
-        judge=judge_model,
+        judge=judge.model,
     )
-    judge = build_judge(settings, judge_model)
     async with (
         LifespanManager(app) as manager,
         AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://eval") as client,

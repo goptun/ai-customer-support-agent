@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from support_agent.config import Settings
 from support_agent.llm import (
     ConversationMessage,
+    anthropic_client,
     complete,
     json_system,
     openai_client,
@@ -51,11 +52,11 @@ attendant will follow up) are not claims. Set hallucinated to true if you list a
 class AnthropicJudge:
     def __init__(self, client: AsyncAnthropic, model: str) -> None:
         self._client = client
-        self._model = model
+        self.model = model
 
     async def judge(self, turn: JudgedTurn) -> Verdict:
         response = await self._client.messages.parse(
-            model=self._model,
+            model=self.model,
             max_tokens=1024,
             system=JUDGE_SYSTEM,
             messages=[{"role": "user", "content": _prompt(turn)}],
@@ -69,12 +70,12 @@ class AnthropicJudge:
 class OpenAICompatibleJudge:
     def __init__(self, client: AsyncOpenAI, model: str) -> None:
         self._client = client
-        self._model = model
+        self.model = model
 
     async def judge(self, turn: JudgedTurn) -> Verdict:
         text = await complete(
             self._client,
-            self._model,
+            self.model,
             json_system(JUDGE_SYSTEM, Verdict),
             [ConversationMessage(role="user", content=_prompt(turn))],
         )
@@ -93,12 +94,14 @@ def _prompt(turn: JudgedTurn) -> str:
     )
 
 
-def build_judge(settings: Settings, model: str) -> Judge:
-    """The judge on the configured provider, like the agent's LLM."""
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
+
+
+def build_judge(
+    settings: Settings, model: str | None = None
+) -> AnthropicJudge | OpenAICompatibleJudge:
+    """The judge on the configured provider, like the agent's LLM. By default Sonnet on
+    Anthropic, and the responder model on an OpenAI-compatible endpoint."""
     if settings.llm_provider == "openai_compatible":
-        return OpenAICompatibleJudge(openai_client(settings), model)
-    if settings.anthropic_api_key is None:
-        raise RuntimeError("ANTHROPIC_API_KEY is required")
-    return AnthropicJudge(
-        AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()), model
-    )
+        return OpenAICompatibleJudge(openai_client(settings), model or settings.responder_model)
+    return AnthropicJudge(anthropic_client(settings), model or DEFAULT_ANTHROPIC_MODEL)
