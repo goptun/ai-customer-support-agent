@@ -69,7 +69,7 @@ The Order the Conversation is currently about, carried across messages.
 _Avoid_: Current order, active order
 
 **Clarification**:
-A question the agent asks instead of guessing when it is not confident about the Intent or the Order.
+A question the agent asks instead of guessing when it is not confident about the Intent or the Order, or can't tell what the Customer wants.
 _Avoid_: Disambiguation, follow-up
 
 **Knowledge Base**:
