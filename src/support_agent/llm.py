@@ -107,6 +107,9 @@ LAST message:
 - other: anything else — doubts, questions, conditions, a different subject or order, or \
 anything you are unsure about. When in doubt, answer other."""
 
+# The traced run of the reply the LLM writes; the evaluation judges its text.
+RESPONDER_RUN_NAME = "responder"
+
 RESPOND_SYSTEM = """\
 You are the customer support agent of a Brazilian online store, replying in Brazilian \
 Portuguese to the Customer's last message. Be brief, warm and direct.
@@ -157,7 +160,7 @@ class AnthropicLLM:
             return Confirmation.OTHER
         return response.parsed_output.decision
 
-    @traceable(run_type="llm")
+    @traceable(run_type="llm", name=RESPONDER_RUN_NAME)
     async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         response = await self._client.messages.create(
             model=self._responder_model,
@@ -209,7 +212,7 @@ class OpenAICompatibleLLM:
         # Unparseable is not a yes: nothing happens without an explicit confirm.
         return Confirmation.OTHER if reply is None else reply.decision
 
-    @traceable(run_type="llm")
+    @traceable(run_type="llm", name=RESPONDER_RUN_NAME)
     async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
         system = f"{RESPOND_SYSTEM}\n\n<facts>\n{facts}\n</facts>"
         return await complete(self._client, self._responder_model, system, history)

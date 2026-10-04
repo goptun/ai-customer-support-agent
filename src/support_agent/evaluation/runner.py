@@ -1,8 +1,9 @@
 """Drives scripted Conversations through the app's /chat and observes each turn.
 
-Tool calls and per-node timings come from the turn's trace, recorded in process: tracing is
-switched on for the turn with a client that keeps the runs instead of sending them, so the
-harness needs no LangSmith account and never mixes its runs with the app's traces.
+Tool calls, per-node timings and the responder's wording come from the turn's trace, recorded
+in process: tracing is switched on for the turn with a client that keeps the runs instead of
+sending them, so the harness needs no LangSmith account and never mixes its runs with the
+app's traces.
 """
 
 import time
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 
 from support_agent.evaluation.dataset import AttendantDecision, ScriptedConversation
 from support_agent.graph import TURN_RUN_NAME
+from support_agent.llm import RESPONDER_RUN_NAME
 from support_agent.seed import ATTENDANTS
 
 
@@ -42,6 +44,8 @@ class TurnRun(BaseModel):
     latency_ms: float  # end to end: the /chat request
     tool_calls: list[ToolCall]  # in call order, retries included
     nodes: list[NodeTiming]  # in run order
+    # The responder LLM's text, if the reply uses it; None if the reply is all templates.
+    llm_wording: str | None = None
 
 
 class ConversationRun(BaseModel):
@@ -105,6 +109,7 @@ async def run_conversation(
                     for node in turn_run.child_runs
                     if node.end_time is not None
                 ],
+                llm_wording=_llm_wording(turn_run, data["reply"]),
             )
         )
     return ConversationRun(id=conversation.id, turns=turns)
@@ -144,6 +149,15 @@ def _descendants(run: RunTree, run_type: str | None = None) -> list[RunTree]:
             found.append(child)
         found.extend(_descendants(child, run_type))
     return sorted(found, key=lambda descendant: descendant.start_time)
+
+
+def _llm_wording(turn_run: RunTree, reply: str) -> str | None:
+    """What the responder LLM wrote, unless an ungrounded reply fell back to the facts."""
+    responses = [run for run in _descendants(turn_run, "llm") if run.name == RESPONDER_RUN_NAME]
+    if not responses:
+        return None
+    wording = str((responses[-1].outputs or {}).get("output") or "").strip()
+    return wording if wording and wording in reply else None
 
 
 def _tool_call(run: RunTree) -> ToolCall:

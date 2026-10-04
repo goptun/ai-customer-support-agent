@@ -133,9 +133,10 @@ async def test_report_scores_each_conversation_run_against_the_app(
     assert summary.intent_accuracy == 1.0
     assert summary.escalation_rate_appropriate == 0.25
     assert summary.escalation_rate_avoidable == 0.25
-    # Judged: the turns whose reply rests on tool outputs (which_order called no tool).
-    assert len(judge.judged) == 4
-    assert summary.hallucination_rate == 0.25
+    # Judged: the turns the LLM wrote from tool outputs. Ticket replies are templates, and
+    # which_order called no tool.
+    assert len(judge.judged) == 2
+    assert summary.hallucination_rate == 0.5
     assert results["in_transit"].turns[0].verdict == Verdict(
         hallucinated=True, unsupported_claims=["mentions ORD-1002"]
     )
@@ -371,3 +372,57 @@ async def test_a_conversation_that_errors_fails_alone(
     markdown = render_markdown(report)
     assert "Failed to run" in markdown
     assert "Judge failed" in markdown
+
+
+ONLY_LLM_WORDING = """
+name: templates
+conversations:
+  - id: refund_template
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[eval] reembolso do 1001"
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001, amount_cents: null}}]
+  - id: cancellation_template
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[eval] cancela o 1002"
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-1002}}]
+  - id: ungrounded_fallback
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[eval] quando chega o 1002?"
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+  - id: llm_wording
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[eval] cadê o 1002?"
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+"""
+
+
+async def test_only_the_wording_the_llm_wrote_is_judged(
+    client: AsyncClient, llm: ScriptedLLM
+) -> None:
+    llm.on("[eval] reembolso do 1001", refund("1001"))
+    llm.on("[eval] cancela o 1002", cancel_order("1002"))
+    # A date the facts don't have: the reply falls back to the facts template.
+    llm.on("[eval] quando chega o 1002?", order_status("1002"), reply="Chega em 25/12/2030.")
+    llm.on("[eval] cadê o 1002?", order_status("1002"), reply="O ORD-1002 está a caminho.")
+    judge = FlagsReplies("ORD-1002")
+
+    report = await evaluate(
+        client, parse_dataset(ONLY_LLM_WORDING), judge, models=MODELS, started_at=STARTED_AT
+    )
+
+    # Refund and Cancellation replies are templates rendered from the tool outputs.
+    assert [turn.reply for turn in judge.judged] == ["O ORD-1002 está a caminho."]
+    results = {result.id: result for result in report.conversations}
+    for template in ("refund_template", "cancellation_template", "ungrounded_fallback"):
+        [turn] = results[template].turns
+        assert turn.verdict is None
+        assert turn.tool_calls
+    assert report.summary.judged_turns == 1

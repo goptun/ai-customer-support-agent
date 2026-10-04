@@ -139,7 +139,8 @@ def _transcript(result: ConversationResult) -> list[str]:
             lines += [f"_Judge failed: {turn.judge_error}_", ""]
             continue
         if turn.verdict is None:
-            lines += ["_No tool output: not judged._", ""]
+            reason = "Template reply" if turn.tool_calls else "No tool output"
+            lines += [f"_{reason}: not judged._", ""]
             continue
         verdict = (
             f"hallucinated — {turn.verdict.unsupported_claims}"
