@@ -10,6 +10,9 @@ lost or returned it).
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Literal
+
+from pydantic import BaseModel, computed_field
 
 from support_agent.cancellations import CancellationResult
 from support_agent.llm import Intent
@@ -434,19 +437,23 @@ _STATUS_WORDS = re.compile(
 )
 
 
-def is_grounded(reply: str, facts: Facts) -> bool:
-    """True if the reply states no date, amount, day count or status beyond the facts."""
+def _ungrounded(reply: str, facts: Facts) -> list[str]:
+    """The dates, amounts, day counts and statuses the reply states beyond the facts."""
     folded_text = facts.text.casefold()
     folded_statuses = {status.casefold() for status in facts.statuses}
-    literals_grounded = all(
-        token.casefold() in folded_text
+    beyond = [
+        match
         for pattern in (_DATE, _AMOUNT, _DAYS)
-        for token in pattern.findall(reply)
-    )
-    statuses_grounded = all(
-        word.casefold() in folded_statuses for word in _STATUS_WORDS.findall(reply)
-    )
-    return literals_grounded and statuses_grounded
+        for match in pattern.finditer(reply)
+        if match.group().casefold() not in folded_text
+    ]
+    beyond += [
+        match
+        for match in _STATUS_WORDS.finditer(reply)
+        if match.group().casefold() not in folded_statuses
+    ]
+    ordered = sorted(beyond, key=lambda match: match.start())
+    return list(dict.fromkeys(match.group() for match in ordered))
 
 
 # A negation shortly before a wording, in the same clause, contradicts it: "não foi extraviado",
@@ -468,13 +475,49 @@ def _affirms(folded_reply: str, wording: str) -> bool:
     )
 
 
-def is_complete(reply: str, facts: Facts) -> bool:
-    """True if the reply states every fact the Customer needs, and negates none of them."""
+def _unaffirmed(reply: str, facts: Facts) -> list[list[str]]:
+    """The facts the Customer needs that the reply leaves out or negates, as their wordings."""
     folded_reply = reply.casefold()
-    return all(any(_affirms(folded_reply, wording) for wording in fact) for fact in facts.required)
+    return sorted(
+        sorted(fact)
+        for fact in facts.required
+        if not any(_affirms(folded_reply, wording) for wording in fact)
+    )
+
+
+# The checks an LLM reply must pass to be used instead of the facts.
+Check = Literal["empty", "grounded", "complete"]
+
+
+class FallbackReason(BaseModel):
+    """Why an LLM reply was discarded in favour of the facts."""
+
+    empty: bool = False
+    ungrounded: list[str] = []  # stated beyond the facts: the `grounded` check
+    unaffirmed: list[list[str]] = []  # required facts, as their wordings: the `complete` check
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def checks(self) -> list[Check]:
+        """The checks the reply failed."""
+        failed: dict[Check, object] = {
+            "empty": self.empty,
+            "grounded": self.ungrounded,
+            "complete": self.unaffirmed,
+        }
+        return [check for check, failing in failed.items() if failing]
+
+
+def fallback_reason(reply: str, facts: Facts) -> FallbackReason | None:
+    """Why the reply can't be used, or None if it is grounded and complete."""
+    if not reply.strip():
+        return FallbackReason(empty=True)
+    ungrounded, unaffirmed = _ungrounded(reply, facts), _unaffirmed(reply, facts)
+    if ungrounded or unaffirmed:
+        return FallbackReason(ungrounded=ungrounded, unaffirmed=unaffirmed)
+    return None
 
 
 def grounded_reply(reply: str, facts: Facts) -> str:
     """The LLM's reply if it is grounded and complete, otherwise the facts themselves."""
-    usable = reply.strip() and is_grounded(reply, facts) and is_complete(reply, facts)
-    return reply if usable else facts.text
+    return facts.text if fallback_reason(reply, facts) else reply

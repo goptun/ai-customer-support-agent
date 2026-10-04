@@ -8,17 +8,31 @@ app's traces.
 
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from httpx import AsyncClient
 from langsmith import Client, trace, tracing_context
 from langsmith.run_trees import RunTree
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from support_agent.evaluation.dataset import AttendantDecision, ScriptedConversation
 from support_agent.graph import TURN_RUN_NAME
 from support_agent.llm import RESPONDER_RUN_NAME
+from support_agent.replies import (
+    Facts,
+    FallbackReason,
+    fallback_reason,
+    render_knowledge,
+    render_order_status,
+)
 from support_agent.seed import ATTENDANTS
+from support_agent.tools import (
+    KnowledgeBaseResult,
+    OrderStatusResult,
+    get_order_status,
+    search_knowledge_base,
+)
 
 
 class ToolCall(BaseModel):
@@ -36,6 +50,15 @@ class NodeTiming(BaseModel):
 ATTENDANT_ID = ATTENDANTS[0]["id"]
 
 
+class ResponderFallback(BaseModel):
+    """A responder LLM reply discarded for the facts it was given."""
+
+    llm_reply: str
+    # None if the facts can't be rebuilt from the turn's tool calls; no failed checks if the
+    # rebuilt facts pass it, so they differ from the ones the responder node checked.
+    reason: FallbackReason | None
+
+
 class TurnRun(BaseModel):
     message: str
     reply: str
@@ -46,6 +69,7 @@ class TurnRun(BaseModel):
     nodes: list[NodeTiming]  # in run order
     # The responder LLM's text, if the reply uses it; None if the reply is all templates.
     llm_wording: str | None = None
+    fallback: ResponderFallback | None = None
 
 
 class ConversationRun(BaseModel):
@@ -96,6 +120,9 @@ async def run_conversation(
         data = response.json()
         conversation_id = uuid.UUID(data["conversation_id"])
         turn_run = _find(root, TURN_RUN_NAME)
+        tool_calls = [_tool_call(run) for run in _descendants(turn_run, "tool")]
+        llm_reply = _responder_reply(turn_run)
+        llm_wording = llm_reply if llm_reply and llm_reply in data["reply"] else None
         turns.append(
             TurnRun(
                 message=turn.message,
@@ -103,13 +130,14 @@ async def run_conversation(
                 notices=data["notices"],
                 intent=data["intent"],
                 latency_ms=latency_ms,
-                tool_calls=[_tool_call(run) for run in _descendants(turn_run, "tool")],
+                tool_calls=tool_calls,
                 nodes=[
                     NodeTiming(node=node.name, ms=_ms(node))
                     for node in turn_run.child_runs
                     if node.end_time is not None
                 ],
-                llm_wording=_llm_wording(turn_run, data["reply"]),
+                llm_wording=llm_wording,
+                fallback=_fallback(llm_reply, llm_wording, tool_calls),
             )
         )
     return ConversationRun(id=conversation.id, turns=turns)
@@ -151,13 +179,47 @@ def _descendants(run: RunTree, run_type: str | None = None) -> list[RunTree]:
     return sorted(found, key=lambda descendant: descendant.start_time)
 
 
-def _llm_wording(turn_run: RunTree, reply: str) -> str | None:
-    """What the responder LLM wrote, unless an ungrounded reply fell back to the facts."""
+def _responder_reply(turn_run: RunTree) -> str | None:
+    """What the responder LLM wrote this turn, or None if it didn't run."""
     responses = [run for run in _descendants(turn_run, "llm") if run.name == RESPONDER_RUN_NAME]
     if not responses:
         return None
-    wording = str((responses[-1].outputs or {}).get("output") or "").strip()
-    return wording if wording and wording in reply else None
+    return str((responses[-1].outputs or {}).get("output") or "").strip()
+
+
+def _fallback(
+    llm_reply: str | None, llm_wording: str | None, tool_calls: list[ToolCall]
+) -> ResponderFallback | None:
+    """What the responder LLM wrote, and why, if the reply fell back to the facts."""
+    if llm_reply is None or llm_wording is not None:
+        return None
+    return ResponderFallback(llm_reply=llm_reply, reason=_fallback_reason(llm_reply, tool_calls))
+
+
+def _fallback_reason(llm_reply: str, tool_calls: list[ToolCall]) -> FallbackReason | None:
+    """Why the reply was discarded, checked against the facts the responder was given.
+
+    The facts are rebuilt from the tool output they were rendered from, the way the responder
+    nodes render them.
+    """
+    for call in reversed(tool_calls):
+        facts: Facts | None = None
+        if call.name == get_order_status.__name__:
+            facts = _facts(call, OrderStatusResult, render_order_status)
+        elif call.name == search_knowledge_base.__name__:
+            facts = _facts(call, KnowledgeBaseResult, render_knowledge)
+        if facts is not None:
+            return fallback_reason(llm_reply, facts) or FallbackReason()
+    return None
+
+
+def _facts[R: BaseModel](
+    call: ToolCall, result: type[R], render: Callable[[R], Facts]
+) -> Facts | None:
+    try:
+        return render(result.model_validate(call.output))
+    except ValidationError:  # a ToolError, or the call raised
+        return None
 
 
 def _tool_call(run: RunTree) -> ToolCall:
