@@ -1,9 +1,12 @@
-"""LLM provider interface and its Anthropic implementation.
+"""LLM provider interface and its implementations: Anthropic, and any OpenAI-compatible
+endpoint such as the 9router (ADR-0004), chosen by configuration.
 
 Tests use a scripted fake; only the evaluation suite talks to the real models.
 """
 
 import enum
+import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -11,7 +14,12 @@ from typing import Literal, Protocol
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
 from langsmith import traceable
-from pydantic import BaseModel, Field
+from langsmith.wrappers import wrap_openai
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
+from pydantic import BaseModel, Field, ValidationError
+
+from support_agent.config import Settings
 
 
 class Intent(enum.StrEnum):
@@ -163,3 +171,129 @@ class AnthropicLLM:
 
 def _to_params(history: Sequence[ConversationMessage]) -> list[MessageParam]:
     return [{"role": m.role, "content": m.content} for m in history]
+
+
+class OpenAICompatibleLLM:
+    """The same calls over chat completions, for endpoints without Anthropic's structured
+    output: the schema goes in the prompt and the reply is parsed leniently, since a combo
+    may route to models that wrap the JSON in prose or a code fence."""
+
+    def __init__(self, client: AsyncOpenAI, classifier_model: str, responder_model: str):
+        self._client = client
+        self._classifier_model = classifier_model
+        self._responder_model = responder_model
+
+    @traceable(run_type="llm")
+    async def classify(self, history: Sequence[ConversationMessage]) -> Classification:
+        text = await complete(
+            self._client,
+            self._classifier_model,
+            json_system(CLASSIFY_SYSTEM, Classification),
+            history,
+        )
+        classification = parse_json_reply(text, Classification)
+        if classification is None:
+            # Unparseable: treat as an unconfident "other" so the agent asks again.
+            return Classification(intents=[Intent.OTHER], confidence=0.0, entities=Entities())
+        return classification
+
+    @traceable(run_type="llm")
+    async def classify_confirmation(self, history: Sequence[ConversationMessage]) -> Confirmation:
+        text = await complete(
+            self._client,
+            self._classifier_model,
+            json_system(CONFIRM_SYSTEM, ConfirmationReply),
+            history,
+        )
+        reply = parse_json_reply(text, ConfirmationReply)
+        # Unparseable is not a yes: nothing happens without an explicit confirm.
+        return Confirmation.OTHER if reply is None else reply.decision
+
+    @traceable(run_type="llm")
+    async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
+        system = f"{RESPOND_SYSTEM}\n\n<facts>\n{facts}\n</facts>"
+        return await complete(self._client, self._responder_model, system, history)
+
+
+async def complete(
+    client: AsyncOpenAI, model: str, system: str, history: Sequence[ConversationMessage]
+) -> str:
+    """The reply text of one chat completion, without any leading reasoning block."""
+    messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": system}]
+    for m in history:
+        if m.role == "user":
+            messages.append({"role": "user", "content": m.content})
+        else:
+            messages.append({"role": "assistant", "content": m.content})
+    response = await client.chat.completions.create(model=model, messages=messages)
+    content = response.choices[0].message.content if response.choices else None
+    return _without_reasoning(content or "").strip()
+
+
+def json_system(system: str, schema: type[BaseModel]) -> str:
+    return (
+        f"{system}\n\nAnswer with only a JSON object (no prose, no code fence) matching this "
+        f"JSON Schema:\n{json.dumps(schema.model_json_schema())}"
+    )
+
+
+_REASONING_END = re.compile(r"</think(?:ing)?>")
+_REASONING_START = re.compile(r"<think(?:ing)?>")
+
+
+def _without_reasoning(text: str) -> str:
+    """What follows the model's reasoning, if it shows any: a draft is never the answer.
+
+    Some models omit the opening tag; reasoning cut off before its closing tag is no answer.
+    """
+    ends = list(_REASONING_END.finditer(text))
+    if ends:
+        return text[ends[-1].end() :]
+    return "" if _REASONING_START.search(text) else text
+
+
+def parse_json_reply[M: BaseModel](text: str, schema: type[M]) -> M | None:
+    """The JSON object in the reply that fits the schema, or None if there is none, or
+    several that disagree (a model weighing options hasn't answered)."""
+    decoder = json.JSONDecoder()
+    found: list[M] = []
+    for start in (match.start() for match in re.finditer(r"\{", text)):
+        try:
+            value, _ = decoder.raw_decode(text, start)
+            found.append(schema.model_validate(value))
+        except (json.JSONDecodeError, ValidationError):
+            continue
+    if not found or any(other != found[0] for other in found[1:]):
+        return None
+    return found[0]
+
+
+def build_llm(settings: Settings) -> LLM:
+    """The LLM of the configured provider."""
+    if settings.llm_provider == "openai_compatible":
+        return OpenAICompatibleLLM(
+            openai_client(settings), settings.classifier_model, settings.responder_model
+        )
+    return AnthropicLLM(
+        anthropic_client(settings),
+        classifier_model=settings.classifier_model,
+        responder_model=settings.responder_model,
+    )
+
+
+def anthropic_client(settings: Settings) -> AsyncAnthropic:
+    if settings.anthropic_api_key is None:
+        raise RuntimeError("ANTHROPIC_API_KEY is required")
+    return AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
+
+
+def openai_client(settings: Settings) -> AsyncOpenAI:
+    if not settings.llm_base_url:
+        raise RuntimeError("LLM_BASE_URL is required with LLM_PROVIDER=openai_compatible")
+    # A local router may not check keys, but the SDK wants a non-empty one.
+    key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else "not-needed"
+    client = AsyncOpenAI(
+        base_url=settings.llm_base_url, api_key=key, timeout=settings.llm_timeout_seconds
+    )
+    # Traces each completion with the model that answered: with a combo, it varies per call.
+    return wrap_openai(client)

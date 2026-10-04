@@ -105,7 +105,7 @@ After changing a graph, run `uv run python -m support_agent.diagram` to regenera
 ## Run locally
 
 ```sh
-cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET and ANTHROPIC_API_KEY
+cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET and the LLM provider (below)
 docker compose up -d --build
 ```
 
@@ -153,6 +153,21 @@ The mock carrier answers deterministically by tracking code; each seeded Dispatc
 
 ORD-1003, ORD-2001 and ORD-3001 are not Dispatched yet (no tracking).
 
+### LLM provider
+
+Anthropic by default (`ANTHROPIC_API_KEY`; Haiku 4.5 classifies, Sonnet 5.5 responds). Any OpenAI-compatible chat completions endpoint works instead (ADR-0004), e.g. the 9router on the VPS with its `arsenal-vps` combo:
+
+```sh
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=http://<router-host>:20128/v1   # with /v1
+LLM_API_KEY=...                              # the router's key, if it checks one
+CLASSIFIER_MODEL=arsenal-vps
+RESPONDER_MODEL=arsenal-vps
+LLM_TIMEOUT_SECONDS=180                      # per request; combos can be slow
+```
+
+The JSON the classifier must return is asked for in the prompt and parsed leniently; a reply that doesn't parse is treated as not understood (the agent asks again) and never as a confirmation.
+
 ### Tracing (LangSmith)
 
 Off unless set. Add to `.env` and restart the app:
@@ -174,7 +189,7 @@ uv run python -m support_agent.evaluation                                 # ever
 uv run python -m support_agent.evaluation eval/datasets/order_status.yaml # one dataset
 ```
 
-It needs `ANTHROPIC_API_KEY` (environment or `.env`) and Docker: it starts throwaway Postgres and Redis containers (or uses `EVAL_DATABASE_URL` / `EVAL_REDIS_URL`, which must be disposable: the run seeds them and writes Conversations and Tickets), seeds them, indexes the Knowledge Base with the real embedding model and drives the app in process through `/chat`, with the logistics mock and the seed's clock (today = 01/09/2026). `--judge-model` picks the judge (default Sonnet 5.5).
+It needs the LLM provider configured (environment or `.env`, see [LLM provider](#llm-provider)) and Docker: it starts throwaway Postgres and Redis containers (or uses `EVAL_DATABASE_URL` / `EVAL_REDIS_URL`, which must be disposable: the run seeds them and writes Conversations and Tickets), seeds them, indexes the Knowledge Base with the real embedding model and drives the app in process through `/chat`, with the logistics mock and the seed's clock (today = 01/09/2026). `--judge-model` picks the judge (default Sonnet 5.5 on Anthropic, the responder model on an OpenAI-compatible endpoint), on the same provider.
 
 - **Datasets** (`eval/datasets/*.yaml`): each Conversation has a seeded Customer, fixed Customer turns and an expected outcome (`resolved | escalated_appropriate | clarification`); each turn may label the expected Intent, tool calls (name + the args that matter) and facts the reply must contain. Format notes at the top of `order_status.yaml`, which covers every logistics scenario above plus finding the Order, ownership and a human requested.
 - **Metrics**: task completion (expected outcome and every required fact), tool-call accuracy per turn against the gold calls (retries collapsed, order ids in any format), Intent accuracy, p50/p95 latency end to end and per node, hallucination rate (an LLM judge lists reply claims the turn's tool outputs don't support) and escalation rate split into appropriate vs avoidable. Tool calls and node timings come from the turn's trace, recorded in process: no LangSmith account needed and nothing is sent.

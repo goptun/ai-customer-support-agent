@@ -4,7 +4,18 @@ import json
 from typing import Any, Protocol
 
 from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
+
+from support_agent.config import Settings
+from support_agent.llm import (
+    ConversationMessage,
+    anthropic_client,
+    complete,
+    json_system,
+    openai_client,
+    parse_json_reply,
+)
 
 
 class JudgedTurn(BaseModel):
@@ -41,11 +52,11 @@ attendant will follow up) are not claims. Set hallucinated to true if you list a
 class AnthropicJudge:
     def __init__(self, client: AsyncAnthropic, model: str) -> None:
         self._client = client
-        self._model = model
+        self.model = model
 
     async def judge(self, turn: JudgedTurn) -> Verdict:
         response = await self._client.messages.parse(
-            model=self._model,
+            model=self.model,
             max_tokens=1024,
             system=JUDGE_SYSTEM,
             messages=[{"role": "user", "content": _prompt(turn)}],
@@ -56,6 +67,24 @@ class AnthropicJudge:
         return response.parsed_output
 
 
+class OpenAICompatibleJudge:
+    def __init__(self, client: AsyncOpenAI, model: str) -> None:
+        self._client = client
+        self.model = model
+
+    async def judge(self, turn: JudgedTurn) -> Verdict:
+        text = await complete(
+            self._client,
+            self.model,
+            json_system(JUDGE_SYSTEM, Verdict),
+            [ConversationMessage(role="user", content=_prompt(turn))],
+        )
+        verdict = parse_json_reply(text, Verdict)
+        if verdict is None:
+            raise RuntimeError(f"judge gave no verdict: {text[:200]!r}")
+        return verdict
+
+
 def _prompt(turn: JudgedTurn) -> str:
     outputs = json.dumps(turn.tool_outputs, ensure_ascii=False, indent=2, default=str)
     return (
@@ -63,3 +92,16 @@ def _prompt(turn: JudgedTurn) -> str:
         f"<tool_outputs>\n{outputs}\n</tool_outputs>\n\n"
         f"<agent_reply>\n{turn.reply}\n</agent_reply>"
     )
+
+
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
+
+
+def build_judge(
+    settings: Settings, model: str | None = None
+) -> AnthropicJudge | OpenAICompatibleJudge:
+    """The judge on the configured provider, like the agent's LLM. By default Sonnet on
+    Anthropic, and the responder model on an OpenAI-compatible endpoint."""
+    if settings.llm_provider == "openai_compatible":
+        return OpenAICompatibleJudge(openai_client(settings), model or settings.responder_model)
+    return AnthropicJudge(anthropic_client(settings), model or DEFAULT_ANTHROPIC_MODEL)

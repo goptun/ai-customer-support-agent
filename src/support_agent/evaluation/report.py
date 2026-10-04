@@ -45,6 +45,7 @@ ObservedOutcome = Literal["resolved", "escalated", "clarification"]
 
 
 class ModelIds(BaseModel):
+    provider: str  # LLM_PROVIDER: whose models these are
     classifier: str
     responder: str
     judge: str
