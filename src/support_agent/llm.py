@@ -91,9 +91,13 @@ Classify the Customer's LAST message, using earlier messages only as context.
 Intents:
 - order_status: where an order is, when it arrives, tracking, delays
 - cancel_order: wants to cancel an order
-- refund: wants money back, or asks about a refund
-- faq: questions about store policies (delivery times, exchanges, returns, refund rules)
+- refund: wants money back for an order, or asks about the status of their own refund
+- faq: questions about store policies (delivery times, exchanges, returns, refund rules, \
+how long a refund takes or how the money comes back)
 - other: greetings, small talk, anything else
+
+A general question about how refunds work (timing, payment method, rules) is faq, not \
+refund: the Customer is asking about the policy, not for their money back.
 
 When the Customer asks for money back, the intent is refund, even if the message also says \
 the order is late, lost or was returned to sender: that is the reason for the refund, not a \
