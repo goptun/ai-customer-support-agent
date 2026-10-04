@@ -95,6 +95,11 @@ Intents:
 - faq: questions about store policies (delivery times, exchanges, returns, refund rules)
 - other: greetings, small talk, anything else
 
+When the Customer asks for money back, the intent is refund, even if the message also says \
+the order is late, lost or was returned to sender: that is the reason for the refund, not a \
+separate order_status question. Use order_status only when they also ask where the order is \
+or what happened to it.
+
 List every intent present, in the order raised. Extract the order number exactly as written \
 (e.g. "123", "ORD-1002"). confidence is how sure you are about the first intent."""
 
