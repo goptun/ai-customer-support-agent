@@ -1,0 +1,1311 @@
+{
+  "dataset": "conversation",
+  "started_at": "2026-10-04T20:37:05.558983Z",
+  "models": {
+    "provider": "openai_compatible",
+    "classifier": "arsenal-vps",
+    "responder": "arsenal-vps",
+    "judge": "arsenal-vps"
+  },
+  "git_commit": "750d7a1-dirty",
+  "summary": {
+    "conversations": 11,
+    "conversations_failed": 0,
+    "turns": 21,
+    "task_completion_rate": 1.0,
+    "tool_call_accuracy": 1.0,
+    "intent_accuracy": 1.0,
+    "hallucination_rate": 0.0,
+    "judged_turns": 5,
+    "escalation_rate_appropriate": 0.36363636363636365,
+    "escalation_rate_avoidable": 0.0,
+    "escalations_missed": 0,
+    "latency_ms": {
+      "turn": {
+        "count": 21,
+        "p50": 1347.814769949764,
+        "p95": 3566.8497839942575
+      },
+      "nodes": {
+        "act": {
+          "count": 10,
+          "p50": 14.462499999999999,
+          "p95": 1518.98585
+        },
+        "await_confirmation": {
+          "count": 2,
+          "p50": 306.00849999999997,
+          "p95": 579.93745
+        },
+        "cancel": {
+          "count": 1,
+          "p50": 26.131,
+          "p95": 26.131
+        },
+        "classify_intent": {
+          "count": 20,
+          "p50": 1096.2069999999999,
+          "p95": 2254.60195
+        },
+        "consult_knowledge_base": {
+          "count": 2,
+          "p50": 39.193,
+          "p95": 39.9058
+        },
+        "escalate": {
+          "count": 4,
+          "p50": 14.2085,
+          "p95": 15.057
+        },
+        "resolve_context": {
+          "count": 10,
+          "p50": 1.5085000000000002,
+          "p95": 2.3130499999999987
+        },
+        "respond": {
+          "count": 21,
+          "p50": 1.9,
+          "p95": 1401.086
+        }
+      }
+    }
+  },
+  "conversations": [
+    {
+      "id": "multi_intent_same_order",
+      "customer_id": "cus_ana",
+      "description": "Two Intents about one Order: the first is answered and the second announced, then carried on when the Customer says to go ahead.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "O pedido ORD-1003 já saiu? Se não saiu, quero cancelar.",
+          "reply": "Pedido ORD-1003: em separação.\nEle ainda não foi enviado à transportadora.\nPrevisão de entrega: 08/09/2026.\n\nTambém vi que você quer cancelar o pedido ORD-1003. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1003"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1003",
+                "status": "processing",
+                "placed_at": "2026-08-31T12:00:00Z",
+                "promised_delivery_date": "2026-09-08",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 2756.1284792609513,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1366.3600000000001
+            },
+            {
+              "node": "resolve_context",
+              "ms": 2.777
+            },
+            {
+              "node": "act",
+              "ms": 8.788
+            },
+            {
+              "node": "respond",
+              "ms": 1310.9740000000002
+            }
+          ]
+        },
+        {
+          "message": "Pode seguir",
+          "reply": "Você quer mesmo cancelar o pedido ORD-1003 inteiro? Como ele já está pago, o reembolso integral de R$ 119,80 será feito automaticamente. Responda \"sim\" para confirmar o cancelamento ou \"não\" para manter o pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-1003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-1003"
+              },
+              "output": {
+                "kind": "cancellation_preview",
+                "order_id": "ORD-1003",
+                "refund_cents": 11980
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1048.619832843542,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 985.4889999999999
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.358
+            },
+            {
+              "node": "act",
+              "ms": 13.089
+            },
+            {
+              "node": "respond",
+              "ms": 1.8539999999999999
+            },
+            {
+              "node": "await_confirmation",
+              "ms": 1.643
+            }
+          ]
+        },
+        {
+          "message": "sim",
+          "reply": "Pronto, cancelei o pedido ORD-1003. O reembolso de R$ 119,80 foi emitido (reembolso #1).",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-1003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-1003",
+                "expected_refund_cents": 11980
+              },
+              "output": {
+                "kind": "cancellation",
+                "order_id": "ORD-1003",
+                "refund": {
+                  "refund_id": 1,
+                  "amount_cents": 11980,
+                  "status": "issued"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 669.4147437810898,
+          "nodes": [
+            {
+              "node": "await_confirmation",
+              "ms": 610.374
+            },
+            {
+              "node": "cancel",
+              "ms": 26.131
+            },
+            {
+              "node": "respond",
+              "ms": 1.5690000000000002
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "multi_intent_two_orders",
+      "customer_id": "cus_ana",
+      "description": "Each Intent is about its own Order: the queued Refund must be for ORD-1001, not for the Order just answered.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Onde está o ORD-1002? E também quero reembolso do ORD-1001.",
+          "reply": "Olá! 😊\n\n- **Pedido ORD-1002**: está em trânsito (última atualização em 31/08/2026 – Curitiba/PR). Código de rastreio: **BR100000002**. A previsão de entrega é **03/09/2026**.\n\n- Sobre o **pedido ORD-1001**, não tenho informações disponíveis no momento para atender ao pedido de reembolso. Caso queira, por favor, confirme os detalhes do pedido ou entre em contato novamente. \n\nEstou à disposição para ajudar no que precisar!\n\nTambém vi que você quer um reembolso do pedido ORD-1001. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1002",
+                "status": "shipped",
+                "placed_at": "2026-08-26T12:00:00Z",
+                "promised_delivery_date": "2026-09-03",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR100000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "in_transit",
+                    "latest_event": {
+                      "at": "2026-08-31T12:00:00Z",
+                      "status": "in_transit",
+                      "description": "Objeto em trânsito para a unidade de destino",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 2457.8719451092184,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1018.5040000000001
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.435
+            },
+            {
+              "node": "act",
+              "ms": 9.305000000000001
+            },
+            {
+              "node": "respond",
+              "ms": 1401.086
+            }
+          ]
+        },
+        {
+          "message": "Ok, pode seguir com o reembolso",
+          "reply": "O pedido ORD-1001 tem direito a reembolso. Solicitei o reembolso de R$ 249,90, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #2 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": null,
+                "reason": "Ok, pode seguir com o reembolso"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1001",
+                "refund_id": 2,
+                "approval_request_id": "555ddbdd-45ea-438d-9d67-400abc15a9dc",
+                "amount_cents": 24990,
+                "max_cents": 24990,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1147.4047149531543,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1078.771
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.35
+            },
+            {
+              "node": "act",
+              "ms": 36.644999999999996
+            },
+            {
+              "node": "respond",
+              "ms": 1.9780000000000002
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "multi_intent_status_and_policy",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Cadê meu pedido ORD-2002? Aliás, qual o prazo pra trocar um produto?",
+          "reply": "Olá! Seu pedido **ORD‑2002** já foi enviado e pode ser acompanhado pelo código de rastreio **BR200000002**. A previsão de entrega era **17/08/2026**, mas está com atraso devido a um problema operacional da transportadora, conforme a última atualização em **16/08/2026** (Curitiba/PR).\n\nSobre o prazo para troca de produtos, não tenho essa informação no momento. Se precisar, posso verificar para você.\n\nTambém vi que você quer tirar uma dúvida sobre as políticas da loja. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2002",
+                "status": "shipped",
+                "placed_at": "2026-08-02T12:00:00Z",
+                "promised_delivery_date": "2026-08-17",
+                "delivered_at": null,
+                "days_late": 15,
+                "shipment": {
+                  "tracking_code": "BR200000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delayed",
+                    "latest_event": {
+                      "at": "2026-08-16T12:00:00Z",
+                      "status": "delayed",
+                      "description": "Entrega atrasada por problema operacional",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 2547.5837807171047,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1142.61
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.3960000000000001
+            },
+            {
+              "node": "act",
+              "ms": 11.452
+            },
+            {
+              "node": "respond",
+              "ms": 1362.374
+            }
+          ]
+        },
+        {
+          "message": "Pode responder a dúvida",
+          "reply": "Olá! No momento não tenho informações específicas sobre o status do pedido **ORD‑2002**. Para saber onde ele está, por favor verifique o rastreio ou entre em contato com o nosso atendimento.\n\nQuanto ao prazo para troca, **Segundo a Política de Trocas**, você pode solicitar a troca de um produto em até **30 dias corridos a partir da data de entrega** do pedido.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Cadê meu pedido ORD-2002? Aliás, qual o prazo pra trocar um produto?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Trocas",
+                    "section": "Prazo para troca",
+                    "content": "Você pode solicitar a troca de um produto em até 30 dias corridos a partir da data de entrega do pedido.",
+                    "score": 0.6120987321002085
+                  },
+                  {
+                    "title": "Política de Atrasos e Extravios",
+                    "section": "Pedido atrasado",
+                    "content": "Se o pedido não chegar até a data prevista, consulte o status do pedido com o nosso atendimento. Se o atraso passar de 10 dias da data prevista de entrega, você pode solicitar o reembolso do pedido.",
+                    "score": 0.5151576476543924
+                  },
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Quando posso pedir reembolso",
+                    "content": "Você pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.",
+                    "score": 0.4853560906008014
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 3612.521213013679,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2388.456
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 39.985
+            },
+            {
+              "node": "respond",
+              "ms": 1154.044
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "multi_intent_refund_and_policy",
+      "customer_id": "cus_ana",
+      "description": "Asks for money back and how long it takes; the policy question waits its turn.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do 1001, em quanto tempo cai?",
+          "reply": "O pedido ORD-1001 tem direito a reembolso. Solicitei o reembolso de R$ 249,90, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #3 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.\n\nTambém vi que você quer tirar uma dúvida sobre as políticas da loja. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "1001",
+                "amount_cents": null,
+                "reason": "Quero reembolso do 1001, em quanto tempo cai?"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1001",
+                "refund_id": 3,
+                "approval_request_id": "c7763148-3f70-455f-a50c-ec701e0b7110",
+                "amount_cents": 24990,
+                "max_cents": 24990,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1997.2948567010462,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1929.654
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.663
+            },
+            {
+              "node": "act",
+              "ms": 32.036
+            },
+            {
+              "node": "respond",
+              "ms": 1.441
+            }
+          ]
+        },
+        {
+          "message": "Pode responder a dúvida",
+          "reply": "Política de Reembolso — Quando posso pedir reembolso:\nVocê pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.\n\nPolítica de Reembolso — Aprovação e prazo:\nTodo pedido de reembolso é analisado e aprovado por um atendente antes de ser emitido. Depois de aprovado, o valor é estornado na mesma forma de pagamento: no cartão de crédito, o estorno aparece em até duas faturas; no Pix, em até 5 dias úteis.\n\nPolítica de Pagamentos — Confirmação do pagamento:\nPagamentos com Pix são confirmados em poucos minutos; com cartão de crédito, em até 1 dia útil; com boleto, em até 3 dias úteis após o pagamento. O prazo de entrega começa a contar após a confirmação.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Quero reembolso do 1001, em quanto tempo cai?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Quando posso pedir reembolso",
+                    "content": "Você pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.",
+                    "score": 0.6242091416205059
+                  },
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Aprovação e prazo",
+                    "content": "Todo pedido de reembolso é analisado e aprovado por um atendente antes de ser emitido. Depois de aprovado, o valor é estornado na mesma forma de pagamento: no cartão de crédito, o estorno aparece em até duas faturas; no Pix, em até 5 dias úteis.",
+                    "score": 0.5611617879899671
+                  },
+                  {
+                    "title": "Política de Pagamentos",
+                    "section": "Confirmação do pagamento",
+                    "content": "Pagamentos com Pix são confirmados em poucos minutos; com cartão de crédito, em até 1 dia útil; com boleto, em até 3 dias úteis após o pagamento. O prazo de entrega começa a contar após a confirmação.",
+                    "score": 0.4985499914695777
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 3492.945348378271,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1840.269
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 38.400999999999996
+            },
+            {
+              "node": "respond",
+              "ms": 1586.942
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "clarification",
+      "customer_id": "cus_carla",
+      "description": "Not clear what the Customer wants; the agent asks instead of acting.",
+      "expected_outcome": "clarification",
+      "observed_outcome": "clarification",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "e aquilo lá?",
+          "reply": "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? Por exemplo: saber onde está um pedido ou tirar uma dúvida sobre trocas.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 924.4591472670436,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 879.084
+            },
+            {
+              "node": "respond",
+              "ms": 1.9
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "clarification_then_understood",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "então, aquele negócio",
+          "reply": "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? Por exemplo: saber onde está um pedido ou tirar uma dúvida sobre trocas.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1226.5236992388964,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1187.0179999999998
+            },
+            {
+              "node": "respond",
+              "ms": 1.7730000000000001
+            }
+          ]
+        },
+        {
+          "message": "Quero saber onde está o pedido ORD-3005",
+          "reply": "O pedido **ORD-3005** já foi enviado. O código de rastreio é **BR300000005** e a previsão de entrega é **05/09/2026**. No momento, a transportadora ainda não possui informações de rastreio para esse código.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3005"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3005"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3005",
+                "status": "shipped",
+                "placed_at": "2026-08-28T12:00:00Z",
+                "promised_delivery_date": "2026-09-05",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000005",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "tracking_not_found"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1817.6600211299956,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 990.48
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.746
+            },
+            {
+              "node": "act",
+              "ms": 9.519
+            },
+            {
+              "node": "respond",
+              "ms": 788.4839999999999
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "clarification_failed_escalates",
+      "customer_id": "cus_diego",
+      "description": "After two Clarifications in a row, the third unclear message opens a Ticket.",
+      "expected_outcome": "escalated_appropriate",
+      "observed_outcome": "escalated",
+      "escalation": "appropriate",
+      "completed": true,
+      "turns": [
+        {
+          "message": "hmm",
+          "reply": "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? Por exemplo: saber onde está um pedido ou tirar uma dúvida sobre trocas.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 933.9984329417348,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 899.544
+            },
+            {
+              "node": "respond",
+              "ms": 2.21
+            }
+          ]
+        },
+        {
+          "message": "aquilo",
+          "reply": "Não tenho certeza se entendi o que você precisa. Pode me explicar com outras palavras? Por exemplo: saber onde está um pedido ou tirar uma dúvida sobre trocas.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1257.6239700429142,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1228.6619999999998
+            },
+            {
+              "node": "respond",
+              "ms": 1.425
+            }
+          ]
+        },
+        {
+          "message": "sei lá, o negócio",
+          "reply": "Desculpe, não consegui entender o que você precisa, então vou te passar para um atendente. Abri o chamado #1 com o resumo da nossa conversa, então você não vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim que possível.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "clarification_failed"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "clarification_failed",
+                "priority": "normal",
+                "summary": "Motivo: o agente não entendeu o pedido após Clarifications.\nIntenção: other.\nPedido em foco: nenhum.\nÚltimas mensagens do Customer:\n- hmm\n- aquilo\n- sei lá, o negócio",
+                "order_id": null
+              },
+              "output": {
+                "kind": "ticket",
+                "ticket_id": 1,
+                "reason": "clarification_failed",
+                "priority": "normal",
+                "order_id": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1113.8642691075802,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1066.185
+            },
+            {
+              "node": "escalate",
+              "ms": 15.129
+            },
+            {
+              "node": "respond",
+              "ms": 1.6969999999999998
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "small_talk",
+      "customer_id": "cus_diego",
+      "description": "Out of scope; the agent says what it can help with, calling no tool.",
+      "expected_outcome": "clarification",
+      "observed_outcome": "clarification",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Oi! Você sabe me dizer se vai chover amanhã?",
+          "reply": "Sou o assistente de atendimento da loja. Por enquanto consigo te ajudar a acompanhar seus pedidos (me diga o número do pedido e eu verifico o status e a entrega), cancelar pedidos que ainda não foram enviados, solicitar e acompanhar reembolsos e tirar dúvidas sobre as políticas da loja, como prazos de entrega, trocas e reembolsos. Se preferir, também posso te passar para um atendente.",
+          "notices": [],
+          "expected_intent": "other",
+          "intent": "other",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 965.3301453217864,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 931.748
+            },
+            {
+              "node": "respond",
+              "ms": 1.486
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "human_requested_first",
+      "customer_id": "cus_diego",
+      "description": null,
+      "expected_outcome": "escalated_appropriate",
+      "observed_outcome": "escalated",
+      "escalation": "appropriate",
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero falar com um atendente humano, por favor",
+          "reply": "Combinado, vou te passar para um atendente. Abri o chamado #2 com o resumo da nossa conversa, então você não vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim que possível.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "customer_requested"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "customer_requested",
+                "priority": "normal",
+                "summary": "Motivo: o Customer pediu atendimento humano.\nIntenção: other.\nPedido em foco: nenhum.\nÚltimas mensagens do Customer:\n- Quero falar com um atendente humano, por favor",
+                "order_id": null
+              },
+              "output": {
+                "kind": "ticket",
+                "ticket_id": 2,
+                "reason": "customer_requested",
+                "priority": "normal",
+                "order_id": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1158.5968481376767,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1113.643
+            },
+            {
+              "node": "escalate",
+              "ms": 11.88
+            },
+            {
+              "node": "respond",
+              "ms": 1.462
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "human_requested_after_refusal",
+      "customer_id": "cus_carla",
+      "description": "The Refund is refused with a Ticket offered; the Customer takes it.",
+      "expected_outcome": "escalated_appropriate",
+      "observed_outcome": "escalated",
+      "escalation": "appropriate",
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-3002",
+          "reply": "O pedido ORD-3002 foi entregue há mais de 30 dias, e pela Política de Reembolso só é possível pedir reembolso de pedidos entregues há no máximo 30 dias. Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-3002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-3002",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-3002"
+              },
+              "output": {
+                "kind": "refund_refused",
+                "order_id": "ORD-3002",
+                "reason": "delivery_window_expired",
+                "delivery_window_days": 30,
+                "late_after_days": 10
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 1347.814769949764,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1276.276
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.684
+            },
+            {
+              "node": "act",
+              "ms": 15.835999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 3.57
+            }
+          ]
+        },
+        {
+          "message": "Não concordo. Abre um chamado pra um atendente analisar, por favor.",
+          "reply": "Combinado, vou te passar para um atendente. Abri o chamado #3 com o resumo da nossa conversa, então você não vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim que possível.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "other",
+          "expected_tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "customer_requested",
+                "order_id": "ORD-3002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "customer_requested",
+                "priority": "normal",
+                "summary": "Motivo: o Customer pediu atendimento humano.\nIntenção: other.\nPedido em foco: ORD-3002.\nÚltimas mensagens do Customer:\n- Quero reembolso do pedido ORD-3002\n- Não concordo. Abre um chamado pra um atendente analisar, por favor.",
+                "order_id": "ORD-3002"
+              },
+              "output": {
+                "kind": "ticket",
+                "ticket_id": 3,
+                "reason": "customer_requested",
+                "priority": "normal",
+                "order_id": "ORD-3002"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 2293.9475406892598,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 2247.5570000000002
+            },
+            {
+              "node": "escalate",
+              "ms": 14.649000000000001
+            },
+            {
+              "node": "respond",
+              "ms": 1.4400000000000002
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "carrier_error_escalates",
+      "customer_id": "cus_carla",
+      "description": "The carrier answers 500 on every attempt; the second failed turn opens a Ticket.",
+      "expected_outcome": "escalated_appropriate",
+      "observed_outcome": "escalated",
+      "escalation": "appropriate",
+      "completed": true,
+      "turns": [
+        {
+          "message": "Onde está o pedido ORD-3004?",
+          "reply": "Olá! Seu pedido **ORD-3004** já foi enviado. O código de rastreio é **BR300000004** e a previsão de entrega é **04/09/2026**. No momento não consegui consultar a transportadora para obter a atualização mais recente; por favor, tente novamente em alguns minutos.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3004",
+                "status": "shipped",
+                "placed_at": "2026-08-27T12:00:00Z",
+                "promised_delivery_date": "2026-09-04",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000004",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "upstream_unavailable"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 3566.8497839942575,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1038.349
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.582
+            },
+            {
+              "node": "act",
+              "ms": 1519.3129999999999
+            },
+            {
+              "node": "respond",
+              "ms": 979.916
+            }
+          ]
+        },
+        {
+          "message": "Tenta de novo o ORD-3004?",
+          "reply": "Nossos sistemas estão instáveis e não consegui concluir a consulta, então vou te passar para um atendente. Abri o chamado #4 com o resumo da nossa conversa, então você não vai precisar repetir nada. Um atendente vai continuar o atendimento por aqui assim que possível.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3004"
+              }
+            },
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "tool_failure"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-3004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-3004",
+                "status": "shipped",
+                "placed_at": "2026-08-27T12:00:00Z",
+                "promised_delivery_date": "2026-09-04",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR300000004",
+                  "carrier": "Correios Mock",
+                  "tracking": null,
+                  "tracking_error": "upstream_unavailable"
+                }
+              }
+            },
+            {
+              "name": "create_support_ticket",
+              "args": {
+                "reason": "tool_failure",
+                "priority": "high",
+                "summary": "Motivo: falhas repetidas na ferramenta get_order_status.\nIntenção: order_status.\nPedido em foco: ORD-3004.\nÚltimas mensagens do Customer:\n- Onde está o pedido ORD-3004?\n- Tenta de novo o ORD-3004?",
+                "order_id": "ORD-3004"
+              },
+              "output": {
+                "kind": "ticket",
+                "ticket_id": 4,
+                "reason": "tool_failure",
+                "priority": "high",
+                "order_id": "ORD-3004"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 2600.744714960456,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1036.1370000000002
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.393
+            },
+            {
+              "node": "act",
+              "ms": 1518.586
+            },
+            {
+              "node": "escalate",
+              "ms": 13.768
+            },
+            {
+              "node": "respond",
+              "ms": 1.6800000000000002
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ],
+  "review_sample": [
+    "clarification_failed_escalates"
+  ]
+}
