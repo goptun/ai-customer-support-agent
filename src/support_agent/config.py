@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,7 +14,12 @@ class Settings(BaseSettings):
     jwt_ttl_seconds: int = 3600
     working_state_ttl_seconds: int = 1800
     working_state_window: int = 20
+    # anthropic: the Claude API. openai_compatible: any chat completions endpoint, e.g. the
+    # 9router on the VPS (ADR-0004); the model names below are then that endpoint's.
+    llm_provider: Literal["anthropic", "openai_compatible"] = "anthropic"
     anthropic_api_key: SecretStr | None = None
+    llm_base_url: str | None = None  # with /v1, e.g. http://router:20128/v1
+    llm_api_key: SecretStr | None = None
     classifier_model: str = "claude-haiku-4-5"
     responder_model: str = "claude-sonnet-5-5"
     logistics_url: str = "http://logistics:8080"

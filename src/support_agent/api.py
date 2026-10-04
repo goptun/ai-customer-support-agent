@@ -6,7 +6,6 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal, Self
 
 import httpx
-from anthropic import AsyncAnthropic
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langchain_core.tracers.langchain import wait_for_all_tracers
@@ -32,7 +31,7 @@ from support_agent.decisions import (
 )
 from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
 from support_agent.knowledge import Embedder, FastEmbedEmbedder, KnowledgeBase
-from support_agent.llm import LLM, AnthropicLLM
+from support_agent.llm import LLM, build_llm
 from support_agent.logistics import LogisticsClient
 from support_agent.models import ApprovalStatus, Attendant, Customer, MessageRole
 from support_agent.orders import Orders
@@ -93,16 +92,6 @@ class DecisionBody(BaseModel):
 
 def _today() -> date:
     return datetime.now(UTC).date()
-
-
-def _anthropic_llm(settings: Settings) -> LLM:
-    if settings.anthropic_api_key is None:
-        raise RuntimeError("ANTHROPIC_API_KEY is required")
-    return AnthropicLLM(
-        AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()),
-        classifier_model=settings.classifier_model,
-        responder_model=settings.responder_model,
-    )
 
 
 def create_app(
@@ -170,7 +159,7 @@ def create_app(
             app.state.graph = build_graph(
                 checkpointer,
                 AgentDeps(
-                    llm=llm or _anthropic_llm(settings),
+                    llm=llm or build_llm(settings),
                     tools=tools,
                     history_window=settings.working_state_window,
                     retry=RetryPolicy(

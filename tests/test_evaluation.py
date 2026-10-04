@@ -20,7 +20,12 @@ from support_agent.llm import Classification, Entities, Intent
 from .fakes import ScriptedLLM, order_status
 
 ORDER_STATUS_DATASET = Path(__file__).parents[1] / "eval" / "datasets" / "order_status.yaml"
-MODELS = ModelIds(classifier="fake-classifier", responder="fake-responder", judge="fake-judge")
+MODELS = ModelIds(
+    provider="fake-provider",
+    classifier="fake-classifier",
+    responder="fake-responder",
+    judge="fake-judge",
+)
 STARTED_AT = datetime(2026, 10, 4, 15, 30, tzinfo=UTC)
 
 DATASET = """
@@ -142,7 +147,7 @@ async def test_report_scores_each_conversation_run_against_the_app(
 
     markdown = render_markdown(report)
     assert "2026-10-04" in markdown
-    for model in ("fake-classifier", "fake-responder", "fake-judge"):
+    for model in ("fake-provider", "fake-classifier", "fake-responder", "fake-judge"):
         assert model in markdown
     assert report.model_dump(mode="json")["started_at"] == "2026-10-04T15:30:00Z"
 

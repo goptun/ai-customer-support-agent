@@ -4,7 +4,17 @@ import json
 from typing import Any, Protocol
 
 from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
+
+from support_agent.config import Settings
+from support_agent.llm import (
+    ConversationMessage,
+    complete,
+    json_system,
+    openai_client,
+    parse_json_reply,
+)
 
 
 class JudgedTurn(BaseModel):
@@ -56,10 +66,39 @@ class AnthropicJudge:
         return response.parsed_output
 
 
+class OpenAICompatibleJudge:
+    def __init__(self, client: AsyncOpenAI, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    async def judge(self, turn: JudgedTurn) -> Verdict:
+        text = await complete(
+            self._client,
+            self._model,
+            json_system(JUDGE_SYSTEM, Verdict),
+            [ConversationMessage(role="user", content=_prompt(turn))],
+        )
+        verdict = parse_json_reply(text, Verdict)
+        if verdict is None:
+            raise RuntimeError(f"judge gave no verdict: {text[:200]!r}")
+        return verdict
+
+
 def _prompt(turn: JudgedTurn) -> str:
     outputs = json.dumps(turn.tool_outputs, ensure_ascii=False, indent=2, default=str)
     return (
         f"<customer_message>\n{turn.message}\n</customer_message>\n\n"
         f"<tool_outputs>\n{outputs}\n</tool_outputs>\n\n"
         f"<agent_reply>\n{turn.reply}\n</agent_reply>"
+    )
+
+
+def build_judge(settings: Settings, model: str) -> Judge:
+    """The judge on the configured provider, like the agent's LLM."""
+    if settings.llm_provider == "openai_compatible":
+        return OpenAICompatibleJudge(openai_client(settings), model)
+    if settings.anthropic_api_key is None:
+        raise RuntimeError("ANTHROPIC_API_KEY is required")
+    return AnthropicJudge(
+        AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value()), model
     )

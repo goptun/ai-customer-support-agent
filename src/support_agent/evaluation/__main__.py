@@ -2,7 +2,8 @@
 
     uv run python -m support_agent.evaluation [eval/datasets/<name>.yaml ...]
 
-Needs ANTHROPIC_API_KEY (from the environment or .env) and Docker: it starts throwaway
+Needs the configured LLM provider (from the environment or .env): ANTHROPIC_API_KEY, or
+LLM_PROVIDER=openai_compatible with LLM_BASE_URL (ADR-0004); and Docker: it starts throwaway
 Postgres and Redis containers, unless EVAL_DATABASE_URL and EVAL_REDIS_URL point at
 disposable ones (the run seeds them and writes Conversations and Tickets). The app runs in
 process with the real models, the real embedding model and the logistics mock, on the seed's
@@ -21,7 +22,6 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from anthropic import AsyncAnthropic
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -30,17 +30,17 @@ from support_agent.api import create_app
 from support_agent.config import Settings
 from support_agent.db import session_factory
 from support_agent.evaluation.dataset import Dataset, load_dataset
-from support_agent.evaluation.judge import AnthropicJudge
+from support_agent.evaluation.judge import build_judge
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, Report, evaluate
 from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
-from support_agent.llm import AnthropicLLM
+from support_agent.llm import build_llm
 from support_agent.logistics_mock import create_app as create_logistics_mock
 from support_agent.seed import ANCHOR, seed
 
 DATASETS = Path("eval/datasets")
 REPORTS = Path("eval/reports")
-JUDGE_MODEL = "claude-sonnet-5-5"
+JUDGE_MODEL = "claude-sonnet-5-5"  # on an OpenAI-compatible endpoint: the responder model
 
 
 def main() -> None:
@@ -48,7 +48,7 @@ def main() -> None:
     parser.add_argument(
         "datasets", nargs="*", type=Path, help=f"YAML datasets (default: all in {DATASETS}/)"
     )
-    parser.add_argument("--judge-model", default=JUDGE_MODEL)
+    parser.add_argument("--judge-model")
     parser.add_argument("--out", type=Path, default=REPORTS)
     parser.add_argument("--seed", type=int, default=0, help="seed of the human review sample")
     args = parser.parse_args()
@@ -62,8 +62,13 @@ def main() -> None:
         jwt_secret=secrets.token_urlsafe(32),
         logistics_url="http://logistics.eval",
     )
-    if settings.anthropic_api_key is None:
-        parser.error("ANTHROPIC_API_KEY is required")
+    try:
+        build_llm(settings)  # fails fast if the provider isn't configured
+    except RuntimeError as error:
+        parser.error(str(error))
+    judge_model = args.judge_model or (
+        settings.responder_model if settings.llm_provider == "openai_compatible" else JUDGE_MODEL
+    )
 
     with _infrastructure() as (database_url, redis_url):
         settings = settings.model_copy(
@@ -72,7 +77,7 @@ def main() -> None:
         config = Config("alembic.ini")
         config.set_main_option("sqlalchemy.url", settings.database_url)
         command.upgrade(config, "head")
-        asyncio.run(_evaluate(settings, datasets, args.judge_model, args.out, args.seed))
+        asyncio.run(_evaluate(settings, datasets, judge_model, args.out, args.seed))
 
 
 @contextmanager
@@ -99,7 +104,6 @@ def _infrastructure() -> Iterator[tuple[str, str]]:
 async def _evaluate(
     settings: Settings, datasets: list[Dataset], judge_model: str, out: Path, sample_seed: int
 ) -> None:
-    assert settings.anthropic_api_key is not None
     embedder = await asyncio.to_thread(FastEmbedEmbedder, settings.embedding_model)
     engine = create_async_engine(settings.database_url)
     try:
@@ -109,17 +113,20 @@ async def _evaluate(
     finally:
         await engine.dispose()
 
-    anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
     app = create_app(
         settings,
-        llm=AnthropicLLM(anthropic, settings.classifier_model, settings.responder_model),
+        llm=build_llm(settings),
         embedder=embedder,
         logistics_transport=ASGITransport(app=create_logistics_mock()),
         today=ANCHOR.date,
     )
     models = ModelIds(
-        classifier=settings.classifier_model, responder=settings.responder_model, judge=judge_model
+        provider=settings.llm_provider,
+        classifier=settings.classifier_model,
+        responder=settings.responder_model,
+        judge=judge_model,
     )
+    judge = build_judge(settings, judge_model)
     async with (
         LifespanManager(app) as manager,
         AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://eval") as client,
@@ -129,7 +136,7 @@ async def _evaluate(
             report = await evaluate(
                 client,
                 dataset,
-                AnthropicJudge(anthropic, judge_model),
+                judge,
                 models=models,
                 started_at=datetime.now(UTC),
                 git_commit=_git_commit(),

@@ -19,8 +19,8 @@ def render_markdown(report: Report) -> str:
         f"# Evaluation: {report.dataset} — {report.started_at:%Y-%m-%d}",
         "",
         f"- Started at: {report.started_at.isoformat()}",
-        f"- Models: classifier `{models.classifier}`, responder `{models.responder}`, "
-        f"judge `{models.judge}`",
+        f"- Models ({models.provider}): classifier `{models.classifier}`, "
+        f"responder `{models.responder}`, judge `{models.judge}`",
         f"- Commit: `{report.git_commit or 'unknown'}`",
         f"- Conversations: {summary.conversations} ({summary.turns} Customer turns)",
         "",
