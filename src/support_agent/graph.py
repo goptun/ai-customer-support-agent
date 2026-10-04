@@ -26,7 +26,7 @@ from langgraph.types import Command, interrupt
 from pydantic import TypeAdapter
 
 from support_agent.cancellations import CancellationResult
-from support_agent.llm import LLM, Confirmation, ConversationMessage, Intent
+from support_agent.llm import LLM, Classification, Confirmation, ConversationMessage, Intent
 from support_agent.models import TicketPriority, TicketReason
 from support_agent.orders import OrderSummary
 from support_agent.refunds import RefundRequested
@@ -189,6 +189,14 @@ def _ticket_summary(state: ConversationState, reason: TicketReason, tool: str | 
     )
 
 
+def _orders_by_intent(classification: Classification) -> dict[Intent, str | None]:
+    """The Order each Intent is about, when the classifier told them apart (#30)."""
+    order_ids = classification.entities.order_ids
+    if len(order_ids) != len(classification.intents):
+        return {}
+    return dict(zip(classification.intents, order_ids, strict=True))
+
+
 def build_graph(
     checkpointer: BaseCheckpointSaver[Any], deps: AgentDeps
 ) -> CompiledStateGraph[Any, RunContext]:
@@ -199,7 +207,8 @@ def build_graph(
             Intent.OTHER
         ]
         entities = classification.entities
-        order_id = entities.order_id
+        orders = _orders_by_intent(classification)
+        order_id = orders.get(raised[0]) or entities.order_id
         message = state["messages"][-1].text
         queued = list(state.get("queued_intents") or [])
         update: ConversationState = {
@@ -243,13 +252,17 @@ def build_graph(
             update["asks_refund_status"] = resumed.get("asks_refund_status", False)
         else:
             handled = raised[0].value
+            waiting = next((item for item in queued if item["intent"] == handled), None)
+            if waiting is not None and order_id is None:
+                # Asked again for a queued Intent without naming an Order: keep its own (#30).
+                update["order_id"] = waiting["order_id"]
             queued = [item for item in queued if item["intent"] != handled]
             for intent in raised[1:]:
                 if intent.value not in {handled, *(item["intent"] for item in queued)}:
                     queued.append(
                         QueuedIntent(
                             intent=intent.value,
-                            order_id=order_id,
+                            order_id=orders.get(intent, order_id),
                             message=message,
                             requested_amount_cents=entities.requested_amount_cents,
                             asks_refund_status=entities.asks_refund_status,

@@ -157,3 +157,62 @@ async def test_queued_refund_keeps_the_amount_asked_for(engine: AsyncEngine) -> 
     assert resumed.intent == "refund"
     assert "R$ 50,00" in resumed.reply
     assert [r.amount_cents for r in await refunds_of(engine, order_id)] == [5000]
+
+
+def status_then_refund(status_order: str, refund_order: str) -> Classification:
+    return Classification(
+        intents=[Intent.ORDER_STATUS, Intent.REFUND],
+        confidence=0.95,
+        entities=Entities(order_id=status_order, order_ids=[status_order, refund_order]),
+    )
+
+
+async def test_queued_refund_is_for_the_order_named_with_it(engine: AsyncEngine) -> None:
+    ana, llm = agent(engine)
+    asked_about = await dispatched_order(engine)
+    to_refund = await dispatched_order(engine, delivered_days_ago=3)
+    conversation_id = await ana.new_conversation()
+    message = f"cadê o {asked_about}? e quero reembolso do {to_refund}"
+    await say(ana, llm, conversation_id, message, status_then_refund(asked_about, to_refund))
+
+    resumed = await run_turn(ana.graph, conversation_id, ANA, "pode seguir")
+
+    assert resumed.intent == "refund"
+    assert len(await approval_requests_of(engine, to_refund)) == 1
+    assert await approval_requests_of(engine, asked_about) == []
+
+
+async def test_asking_again_for_the_queued_refund_keeps_its_order(engine: AsyncEngine) -> None:
+    ana, llm = agent(engine)
+    asked_about = await dispatched_order(engine)
+    to_refund = await dispatched_order(engine, delivered_days_ago=3)
+    conversation_id = await ana.new_conversation()
+    message = f"cadê o {asked_about}? e quero reembolso do {to_refund}"
+    await say(ana, llm, conversation_id, message, status_then_refund(asked_about, to_refund))
+
+    resumed = await say(ana, llm, conversation_id, "ok, pode seguir com o reembolso", refund())
+
+    assert resumed.intent == "refund"
+    assert len(await approval_requests_of(engine, to_refund)) == 1
+    assert await approval_requests_of(engine, asked_about) == []
+
+
+async def test_the_first_intent_takes_its_order_from_the_per_intent_orders(
+    engine: AsyncEngine,
+) -> None:
+    ana, llm = agent(engine)
+    asked_about = await dispatched_order(engine)
+    to_refund = await dispatched_order(engine, delivered_days_ago=3)
+    conversation_id = await ana.new_conversation()
+    message = f"cadê o {asked_about}? e quero reembolso do {to_refund}"
+    # How a real classifier answered: the Orders only per Intent, no single order_id.
+    per_intent_only = Classification(
+        intents=[Intent.ORDER_STATUS, Intent.REFUND],
+        confidence=0.95,
+        entities=Entities(order_ids=[asked_about, to_refund]),
+    )
+
+    first = await say(ana, llm, conversation_id, message, per_intent_only)
+
+    assert first.intent == "order_status"
+    assert f"Pedido {asked_about}" in first.reply
