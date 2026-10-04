@@ -5,7 +5,8 @@ required facts. The observed outcome is `escalated` if a Ticket was opened, `cla
 if the last turn answered without calling a tool (nor settling a pending Cancellation), and
 `resolved` otherwise. An escalation is appropriate when the Conversation expected one and
 avoidable otherwise. Tool calls are compared per turn with retries collapsed. Hallucinations
-are judged on the turns whose reply rests on tool outputs.
+are judged on the wording the responder LLM wrote from tool outputs: Refund, Cancellation,
+error and Ticket replies are templates rendered from those outputs, so they aren't judged.
 """
 
 import math
@@ -62,7 +63,7 @@ class TurnResult(BaseModel):
     tool_calls: list[ToolCall]  # retries collapsed
     tool_calls_ok: bool
     missing_facts: list[str]
-    verdict: Verdict | None  # None: no tool output to judge against, or the judge failed
+    verdict: Verdict | None  # None: not judged (no tool output, template reply) or judge failed
     judge_error: str | None = None
     latency_ms: float
     nodes: list[NodeTiming]
@@ -200,12 +201,12 @@ async def _score(
 async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -> TurnResult:
     calls = _collapse_retries(observed.tool_calls)
     verdict, judge_error = None, None
-    if calls:
+    if calls and observed.llm_wording is not None:
         try:
             verdict = await judge.judge(
                 JudgedTurn(
                     message=observed.message,
-                    reply=observed.reply,
+                    reply=observed.llm_wording,
                     tool_outputs=tool_outputs(calls),
                 )
             )

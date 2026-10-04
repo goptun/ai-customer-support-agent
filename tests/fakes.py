@@ -7,6 +7,7 @@ from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
+from langsmith import traceable
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from support_agent.approvals import ApprovalWorkflow, build_approval_graph
@@ -80,7 +81,12 @@ class ScriptedLLM:
         )
 
     async def respond(self, history: Sequence[ConversationMessage], facts: str) -> str:
-        return self._replies.get(_last_customer_message(history), facts)
+        return await _traced_reply(self._replies.get(_last_customer_message(history), facts))
+
+
+@traceable(run_type="llm", name="respond")  # like the real LLMs: the evaluation reads it
+async def _traced_reply(reply: str) -> str:
+    return reply
 
 
 def _last_customer_message(history: Sequence[ConversationMessage]) -> str:
