@@ -105,11 +105,12 @@ Intents:
 - other: greetings, small talk, anything else
 
 A general question about how refunds work (timing, payment method, rules) is faq, not \
-refund: the Customer is asking about the policy, not for their money back. When they name \
-their own refund and ask when the money lands ("meu reembolso do ORD-1004 foi aprovado, \
-quando cai?"), it is refund: they ask about the status of their own refund. When they ask \
-for money back and also how refunds work ("quero reembolso do 1001, em quanto tempo cai?"), \
-the intents are refund, then faq.
+refund: the Customer is asking about the policy, not for their money back. When they refer \
+to a refund they already asked for and ask when the money lands ("aprovaram o estorno do \
+pedido 2002, quando o dinheiro volta?"), it is refund with asks_refund_status true: the \
+status of their own refund. When they ask for money back now and also how refunds work ("me \
+devolve o dinheiro do 3001; o estorno é no cartão?"), the intents are refund, then faq, with \
+asks_refund_status false: a new refund, plus a policy question.
 
 When the Customer asks for money back, the intent is refund, even if the message also says \
 the order is late, lost or was returned to sender: that is the reason for the refund, not a \
