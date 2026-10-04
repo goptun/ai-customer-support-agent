@@ -18,7 +18,7 @@ from support_agent.evaluation.judge import JudgedTurn, Verdict
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, evaluate, percentile
 from support_agent.llm import Classification, Confirmation, Entities, Intent
-from support_agent.seed import reset
+from support_agent.seed import CUSTOMERS, reset
 
 from .fakes import ScriptedLLM, cancel_order, order_status, refund
 
@@ -288,3 +288,23 @@ def test_order_status_dataset_covers_every_logistics_scenario() -> None:
     assert len({conversation.id for conversation in dataset.conversations}) == len(
         dataset.conversations
     )
+
+
+def test_every_dataset_scripts_seeded_customers_with_unique_ids() -> None:
+    datasets = [load_dataset(path) for path in sorted(DATASETS.glob("*.yaml"))]
+    conversations = [c for dataset in datasets for c in dataset.conversations]
+
+    ids = [conversation.id for conversation in conversations]
+    assert len(set(ids)) == len(ids)  # unique across datasets: reports are read side by side
+    seeded = {customer["id"] for customer in CUSTOMERS}
+    assert {conversation.customer_id for conversation in conversations} <= seeded
+    tools = {call.name for c in conversations for turn in c.turns for call in turn.tool_calls}
+    assert tools == {
+        "get_order_status",
+        "preview_cancellation",
+        "cancel_order",
+        "create_refund",
+        "get_refund_status",
+        "search_knowledge_base",
+        "create_support_ticket",
+    }

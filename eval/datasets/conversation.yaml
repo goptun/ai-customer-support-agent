@@ -1,0 +1,131 @@
+# The Conversation itself: several Intents in one message, Clarification (and escalating after
+# too many), small talk, a Customer who asks for a human, and repeated tool failure.
+# Format notes in order_status.yaml. Each Conversation starts from the seeded data.
+name: conversation
+conversations:
+  - id: multi_intent_same_order
+    customer_id: cus_ana
+    outcome: resolved
+    description: >-
+      Two Intents about one Order: the first is answered and the second announced, then
+      carried on when the Customer says to go ahead.
+    turns:
+      - message: "O pedido ORD-1003 já saiu? Se não saiu, quero cancelar."
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1003}}]
+        facts: ["cancelar um pedido"]
+      - message: "Pode seguir"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-1003}}]
+        facts: ["ORD-1003", "R$ 119,80"]
+      - message: "sim"
+        tool_calls: [{name: cancel_order, args: {order_id: ORD-1003}}]
+        facts: ["cancelei o pedido ORD-1003"]
+
+  - id: multi_intent_two_orders
+    customer_id: cus_ana
+    outcome: resolved
+    description: >-
+      Each Intent is about its own Order: the queued Refund must be for ORD-1001, not for the
+      Order just answered.
+    turns:
+      - message: "Onde está o ORD-1002? E também quero reembolso do ORD-1001."
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+        facts: ["03/09/2026", "um reembolso"]
+      - message: "Ok, pode seguir com o reembolso"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001}}]
+        facts: ["R$ 249,90", "aguardando aprovação"]
+
+  - id: multi_intent_status_and_policy
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "Cadê meu pedido ORD-2002? Aliás, qual o prazo pra trocar um produto?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-2002}}]
+        facts: ["17/08/2026", "tirar uma dúvida"]
+      - message: "Pode responder a dúvida"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["30 dias"]
+
+  - id: clarification
+    customer_id: cus_carla
+    outcome: clarification
+    description: Not clear what the Customer wants; the agent asks instead of acting.
+    turns:
+      - message: "e aquilo lá?"
+        facts: ["outras palavras"]
+
+  - id: clarification_then_understood
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "então, aquele negócio"
+        facts: ["outras palavras"]
+      - message: "Quero saber onde está o pedido ORD-3005"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3005}}]
+        facts: ["05/09/2026"]
+
+  - id: clarification_failed_escalates
+    customer_id: cus_diego
+    outcome: escalated_appropriate
+    description: After two Clarifications in a row, the third unclear message opens a Ticket.
+    turns:
+      - message: "hmm"
+        facts: ["outras palavras"]
+      - message: "aquilo"
+        facts: ["outras palavras"]
+      - message: "sei lá, o negócio"
+        tool_calls: [{name: create_support_ticket, args: {reason: clarification_failed}}]
+        facts: ["chamado"]
+
+  - id: small_talk
+    customer_id: cus_diego
+    outcome: clarification
+    description: Out of scope; the agent says what it can help with, calling no tool.
+    turns:
+      - message: "Oi! Você sabe me dizer se vai chover amanhã?"
+        intent: other
+        facts: ["pedidos", "reembolsos"]
+
+  - id: human_requested_first
+    customer_id: cus_diego
+    outcome: escalated_appropriate
+    turns:
+      - message: "Quero falar com um atendente humano, por favor"
+        tool_calls: [{name: create_support_ticket, args: {reason: customer_requested}}]
+        facts: ["chamado"]
+
+  - id: human_requested_after_refusal
+    customer_id: cus_carla
+    outcome: escalated_appropriate
+    description: The Refund is refused with a Ticket offered; the Customer takes it.
+    turns:
+      - message: "Quero reembolso do pedido ORD-3002"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-3002}}]
+        facts: ["30 dias"]
+      - message: "Não concordo. Abre um chamado pra um atendente analisar, por favor."
+        tool_calls:
+          - {name: create_support_ticket, args: {reason: customer_requested, order_id: ORD-3002}}
+        facts: ["chamado"]
+
+  - id: carrier_error_escalates
+    customer_id: cus_carla
+    outcome: escalated_appropriate
+    description: The carrier answers 500 on every attempt; the second failed turn opens a Ticket.
+    turns:
+      - message: "Onde está o pedido ORD-3004?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3004}}]
+        facts: ["transportadora"]
+      - message: "Tenta de novo o ORD-3004?"
+        intent: order_status
+        tool_calls:
+          - {name: get_order_status, args: {order_id: ORD-3004}}
+          - {name: create_support_ticket, args: {reason: tool_failure}}
+        facts: ["chamado"]

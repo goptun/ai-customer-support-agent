@@ -1,0 +1,88 @@
+# Knowledge Base: policy questions answered from the written policies (a hit names the policy),
+# and questions no policy covers, where the agent says it doesn't know instead of guessing.
+# Format notes in order_status.yaml. The search query is the agent's to word, so no args are
+# compared. A fact is any one of the listed phrasings: the LLM words the answer.
+name: knowledge_base
+conversations:
+  - id: faq_exchange_window
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Qual o prazo para trocar um produto?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["30 dias", "Política de Trocas"]
+
+  - id: faq_right_of_withdrawal
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "Me arrependi da compra, até quando posso devolver sem precisar explicar o motivo?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["7 dias", "Política de Devolução"]
+
+  - id: faq_free_shipping
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "A partir de qual valor o frete é grátis?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["299", "Política de Frete"]
+
+  - id: faq_refund_timing
+    customer_id: cus_diego
+    outcome: resolved
+    turns:
+      - message: "Depois que o reembolso é aprovado, em quanto tempo o dinheiro volta no Pix?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["5 dias úteis", "Política de Reembolso"]
+
+  - id: faq_warranty
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Qual a garantia dos produtos para defeito de fabricação?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: ["90 dias", "Política de Garantia"]
+
+  - id: faq_boleto_expiry
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "O que acontece se eu não pagar o boleto?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: [["cancelado", "cancela"], "Política de Pagamentos"]
+
+  - id: faq_support_hours
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "Qual o horário de atendimento dos atendentes humanos?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: [["8h", "8:00"], "Política de Atendimento"]
+
+  - id: faq_miss_physical_store
+    customer_id: cus_diego
+    outcome: resolved
+    description: No policy covers it; the agent must not make one up.
+    turns:
+      - message: "Vocês têm loja física em Curitiba?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: [["Não encontrei essa informação", "não tenho essa informação", "não consta"]]
+
+  - id: faq_miss_loyalty_program
+    customer_id: cus_ana
+    outcome: resolved
+    description: No policy covers it; the agent must not make one up.
+    turns:
+      - message: "Vocês têm programa de pontos ou cashback?"
+        intent: faq
+        tool_calls: [{name: search_knowledge_base}]
+        facts: [["Não encontrei essa informação", "não tenho essa informação", "não consta"]]

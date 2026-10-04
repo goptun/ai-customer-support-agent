@@ -1,0 +1,111 @@
+# Cancellation: the explicit confirmation (confirm, deny, anything else), with and without a
+# Refund, and the Orders that can't be cancelled. Format notes in order_status.yaml; replies
+# about Cancellations are deterministic, so their facts are exact phrases.
+#
+# Asking previews the Cancellation (`preview_cancellation`); only a confirmed answer calls
+# `cancel_order`. Each Conversation starts from the seeded data.
+name: cancellation
+conversations:
+  - id: cancel_paid_confirmed
+    customer_id: cus_bruno
+    outcome: resolved
+    description: A paid Order not yet Dispatched; confirming issues the full Refund at once.
+    turns:
+      - message: "Quero cancelar o pedido ORD-2001, desisti do teclado."
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-2001}}]
+        facts: ["ORD-2001", "R$ 399,00", "sim"]
+      - message: "Sim, pode cancelar."
+        tool_calls: [{name: cancel_order, args: {order_id: ORD-2001}}]
+        facts: ["cancelei o pedido ORD-2001", "R$ 399,00"]
+
+  - id: cancel_unpaid_confirmed
+    customer_id: cus_carla
+    outcome: resolved
+    description: Awaiting payment, so there is nothing to refund.
+    turns:
+      - message: "Cancela o pedido 3001 pra mim? Não vou pagar o boleto."
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-3001}}]
+        facts: ["ORD-3001", "não há valor a reembolsar"]
+      - message: "sim"
+        tool_calls: [{name: cancel_order, args: {order_id: ORD-3001}}]
+        facts: ["cancelei o pedido ORD-3001"]
+
+  - id: cancel_denied
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Quero cancelar o pedido ORD-1003"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-1003}}]
+        facts: ["ORD-1003", "R$ 119,80"]
+      - message: "Não, pensando melhor vou manter."
+        facts: ["não cancelei nada", "ORD-1003 continua ativo"]
+
+  - id: cancel_dropped_by_other_message
+    customer_id: cus_diego
+    outcome: resolved
+    description: >-
+      The answer to the confirmation is a new question: the Cancellation is dropped and the
+      message is handled on its own, about the same Order.
+    turns:
+      - message: "Quero cancelar o pedido 4001"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-4001}}]
+        facts: ["ORD-4001", "R$ 89,90"]
+      - message: "Hmm, antes me diz: quando ele chega?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-4001}}]
+        facts: ["não cancelei o pedido ORD-4001", "06/09/2026"]
+
+  - id: cancel_single_recent_order
+    customer_id: cus_diego
+    outcome: resolved
+    description: No order number, but the Customer has a single recent Order.
+    turns:
+      - message: "Quero cancelar minha compra"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-4001}}]
+        facts: ["ORD-4001", "R$ 89,90"]
+      - message: "Isso, confirmo o cancelamento"
+        tool_calls: [{name: cancel_order, args: {order_id: ORD-4001}}]
+        facts: ["cancelei o pedido ORD-4001", "R$ 89,90"]
+
+  - id: cancel_which_order
+    customer_id: cus_ana
+    outcome: clarification
+    description: No order number and several recent Orders; the agent lists them and asks.
+    turns:
+      - message: "Quero cancelar um pedido"
+        intent: cancel_order
+        facts: ["ORD-1003", "Qual deles"]
+
+  - id: cancel_already_dispatched
+    customer_id: cus_ana
+    outcome: resolved
+    description: Already with the carrier; the agent offers refusing the delivery or a return.
+    turns:
+      - message: "Quero cancelar o ORD-1002, comprei errado"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-1002}}]
+        facts: ["já foi enviado", "recusar a entrega"]
+
+  - id: cancel_already_cancelled
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "Cancela o pedido do mouse, o ORD-2003"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-2003}}]
+        facts: ["já está cancelado"]
+
+  - id: cancel_someone_elses_order
+    customer_id: cus_ana
+    outcome: resolved
+    description: ORD-2001 is Bruno's; Ana gets the same answer as for a missing Order.
+    turns:
+      - message: "Quero cancelar o pedido ORD-2001"
+        intent: cancel_order
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-2001}}]
+        facts: ["Não encontrei o pedido ORD-2001"]
