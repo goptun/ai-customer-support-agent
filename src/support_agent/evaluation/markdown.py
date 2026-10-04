@@ -55,6 +55,12 @@ def render_markdown(report: Report) -> str:
         "",
         *(_issues(report.conversations) or ["None."]),
         "",
+        "## Responder fallbacks",
+        "",
+        "Turns whose LLM reply was discarded for the facts, with the checks it failed.",
+        "",
+        *(_fallbacks(report.conversations) or ["None."]),
+        "",
         "## Human review sample",
         "",
         "Check the judge: tick each verdict you agree with, note the ones you don't.",
@@ -116,6 +122,31 @@ def _issues(results: Sequence[ConversationResult]) -> list[str]:
             if turn.verdict and turn.verdict.hallucinated:
                 issues.append(f"{where}: unsupported claims {turn.verdict.unsupported_claims}")
     return issues
+
+
+def _fallbacks(results: Sequence[ConversationResult]) -> list[str]:
+    lines = []
+    for result in results:
+        for number, turn in enumerate(result.turns, start=1):
+            if turn.fallback is None:
+                continue
+            reason = turn.fallback.reason
+            if reason is None:
+                why = "facts not rebuilt from the tool calls"
+            else:
+                failed = {
+                    "empty": "empty reply",
+                    "grounded": "grounded: " + "; ".join(reason.ungrounded),
+                    "complete": "complete: "
+                    + "; ".join(" | ".join(wordings) for wordings in reason.unaffirmed),
+                }
+                why = ", ".join(failed[check] for check in reason.checks)
+            lines += [f"- `{result.id}` turn {number}: {why}", ""]
+            lines += [
+                f"  > {line}" if line else "  >" for line in turn.fallback.llm_reply.splitlines()
+            ]
+            lines.append("")
+    return lines
 
 
 def _calls(calls: Sequence[ToolCall | ExpectedToolCall]) -> str:

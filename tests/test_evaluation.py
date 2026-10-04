@@ -429,3 +429,44 @@ async def test_only_the_wording_the_llm_wrote_is_judged(
         assert turn.verdict is None
         assert turn.tool_calls
     assert report.summary.judged_turns == 1
+
+
+async def test_a_reply_that_fell_back_to_the_facts_records_the_llm_reply_and_why(
+    client: AsyncClient, llm: ScriptedLLM
+) -> None:
+    llm.on("[eval] reembolso do 1001", refund("1001"))
+    llm.on("[eval] cancela o 1002", cancel_order("1002"))
+    llm.on("[eval] quando chega o 1002?", order_status("1002"), reply="Chega em 25/12/2030.")
+    llm.on("[eval] cadê o 1002?", order_status("1002"), reply=LLM_WORDING)
+
+    report = await evaluate(
+        client,
+        parse_dataset(ONLY_LLM_WORDING),
+        FlagsReplies("ORD-1002"),
+        models=MODELS,
+        started_at=STARTED_AT,
+    )
+
+    results = {result.id: result for result in report.conversations}
+    [fell_back] = results["ungrounded_fallback"].turns
+    assert fell_back.fallback is not None
+    assert fell_back.fallback.llm_reply == "Chega em 25/12/2030."
+    reason = fell_back.fallback.reason
+    assert reason is not None
+    assert reason.checks == ["grounded", "complete"]
+    assert reason.ungrounded == ["25/12/2030"]
+    assert reason.unaffirmed == [["03/09/2026"], ["BR100000002"]]
+    # Turns that keep the LLM reply, or never had one, are reported as before.
+    for kept in ("llm_wording", "refund_template", "cancellation_template"):
+        [turn] = results[kept].turns
+        assert turn.fallback is None
+        assert "fallback" not in turn.model_dump(mode="json")
+
+    dumped = report.model_dump(mode="json")["conversations"]
+    [fell_back_json] = next(c for c in dumped if c["id"] == "ungrounded_fallback")["turns"]
+    assert fell_back_json["fallback"]["reason"]["checks"] == ["grounded", "complete"]
+    markdown = render_markdown(report)
+    assert "`ungrounded_fallback` turn 1" in markdown
+    assert "> Chega em 25/12/2030." in markdown
+    assert "grounded: 25/12/2030" in markdown
+    assert "complete: 03/09/2026; BR100000002" in markdown

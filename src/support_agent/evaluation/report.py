@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from httpx import AsyncClient
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from support_agent.evaluation.dataset import (
     CustomerTurn,
@@ -30,6 +30,7 @@ from support_agent.evaluation.judge import Judge, JudgedTurn, Verdict
 from support_agent.evaluation.runner import (
     ConversationRun,
     NodeTiming,
+    ResponderFallback,
     ToolCall,
     TurnRun,
     run_conversation,
@@ -67,6 +68,8 @@ class TurnResult(BaseModel):
     judge_error: str | None = None
     latency_ms: float
     nodes: list[NodeTiming]
+    # Only on turns whose LLM reply fell back to the facts: what it wrote, and why.
+    fallback: ResponderFallback | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @property
     def intent_ok(self) -> bool | None:
@@ -231,6 +234,7 @@ async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -
         judge_error=judge_error,
         latency_ms=observed.latency_ms,
         nodes=observed.nodes,
+        fallback=observed.fallback,
     )
 
 
