@@ -189,12 +189,35 @@ def _ticket_summary(state: ConversationState, reason: TicketReason, tool: str | 
     )
 
 
-def _orders_by_intent(classification: Classification) -> dict[Intent, str | None]:
-    """The Order each Intent is about, when the classifier told them apart (#30)."""
-    order_ids = classification.entities.order_ids
-    if len(order_ids) != len(classification.intents):
-        return {}
-    return dict(zip(classification.intents, order_ids, strict=True))
+def _raised(classification: Classification) -> list[tuple[Intent, str | None]]:
+    """The Intents raised, in order, each with the Order it is about (#30).
+
+    Without an Order per Intent, they all share the message's one.
+    """
+    entities = classification.entities
+    orders = entities.order_ids
+    if len(orders) != len(classification.intents):
+        orders = [entities.order_id] * len(classification.intents)
+    # Small talk next to a real request is not a request of its own.
+    raised: list[tuple[Intent, str | None]] = [
+        (intent, order)
+        for intent, order in zip(classification.intents, orders, strict=True)
+        if intent is not Intent.OTHER
+    ]
+    return raised or [(Intent.OTHER, entities.order_id)]
+
+
+def _carry_on(update: ConversationState, item: QueuedIntent) -> None:
+    """Handle a queued Intent now; what the Customer just said wins over what was queued."""
+    update["intent"] = item["intent"]
+    update["order_id"] = update.get("order_id") or item["order_id"]
+    update["query"] = item.get("message", update["query"])  # absent in older checkpoints
+    update["requested_amount_cents"] = update.get("requested_amount_cents") or item.get(
+        "requested_amount_cents"
+    )
+    update["asks_refund_status"] = update.get("asks_refund_status") or item.get(
+        "asks_refund_status", False
+    )
 
 
 def build_graph(
@@ -202,17 +225,13 @@ def build_graph(
 ) -> CompiledStateGraph[Any, RunContext]:
     async def classify_intent(state: ConversationState) -> ConversationState:
         classification = await deps.llm.classify(_history(state, deps.history_window))
-        # Small talk next to a real request is not a request of its own.
-        raised: list[Intent] = [i for i in classification.intents if i is not Intent.OTHER] or [
-            Intent.OTHER
-        ]
+        raised = _raised(classification)
+        (intent, order_id), *also_raised = raised
         entities = classification.entities
-        orders = _orders_by_intent(classification)
-        order_id = orders.get(raised[0]) or entities.order_id
         message = state["messages"][-1].text
         queued = list(state.get("queued_intents") or [])
         update: ConversationState = {
-            "intent": raised[0].value,
+            "intent": intent.value,
             "order_id": order_id,
             "query": message,
             "tool_result": None,
@@ -243,26 +262,22 @@ def build_graph(
             return update
 
         update["clarifications"] = 0
-        if raised == [Intent.OTHER] and queued:
+        if intent is Intent.OTHER and not also_raised and queued:
             # Nothing new asked: carry on with what the Customer raised earlier.
-            resumed = queued.pop(0)
-            update["intent"], update["order_id"] = resumed["intent"], resumed["order_id"]
-            update["query"] = resumed.get("message", message)  # absent in older checkpoints
-            update["requested_amount_cents"] = resumed.get("requested_amount_cents")
-            update["asks_refund_status"] = resumed.get("asks_refund_status", False)
+            _carry_on(update, queued.pop(0))
         else:
-            handled = raised[0].value
+            handled = intent.value
             waiting = next((item for item in queued if item["intent"] == handled), None)
             if waiting is not None and order_id is None:
-                # Asked again for a queued Intent without naming an Order: keep its own (#30).
-                update["order_id"] = waiting["order_id"]
+                # Asked again for a queued Intent without naming an Order: that one (#30).
+                _carry_on(update, waiting)
             queued = [item for item in queued if item["intent"] != handled]
-            for intent in raised[1:]:
-                if intent.value not in {handled, *(item["intent"] for item in queued)}:
+            for other, other_order_id in also_raised:
+                if other.value not in {handled, *(item["intent"] for item in queued)}:
                     queued.append(
                         QueuedIntent(
-                            intent=intent.value,
-                            order_id=orders.get(intent, order_id),
+                            intent=other.value,
+                            order_id=other_order_id,
                             message=message,
                             requested_amount_cents=entities.requested_amount_cents,
                             asks_refund_status=entities.asks_refund_status,

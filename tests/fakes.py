@@ -48,6 +48,25 @@ def refund(
     )
 
 
+def status_then_refund(
+    status_order: str | None,
+    refund_order: str,
+    *,
+    order_id: str | None = None,
+    amount_cents: int | None = None,
+) -> Classification:
+    """Two Intents, each about its own Order, as a real classifier tells them apart (#30)."""
+    return Classification(
+        intents=[Intent.ORDER_STATUS, Intent.REFUND],
+        confidence=0.95,
+        entities=Entities(
+            order_id=order_id,
+            order_ids=[status_order, refund_order],
+            requested_amount_cents=amount_cents,
+        ),
+    )
+
+
 def faq() -> Classification:
     return Classification(intents=[Intent.FAQ], confidence=0.95, entities=Entities())
 
