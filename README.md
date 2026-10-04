@@ -163,6 +163,7 @@ LLM_BASE_URL=http://<router-host>:20128/v1   # with /v1
 LLM_API_KEY=...                              # the router's key, if it checks one
 CLASSIFIER_MODEL=arsenal-vps
 RESPONDER_MODEL=arsenal-vps
+LLM_TIMEOUT_SECONDS=180                      # per request; combos can be slow
 ```
 
 The JSON the classifier must return is asked for in the prompt and parsed leniently; a reply that doesn't parse is treated as not understood (the agent asks again) and never as a confirmation.

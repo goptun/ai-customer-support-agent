@@ -292,6 +292,8 @@ def openai_client(settings: Settings) -> AsyncOpenAI:
         raise RuntimeError("LLM_BASE_URL is required with LLM_PROVIDER=openai_compatible")
     # A local router may not check keys, but the SDK wants a non-empty one.
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else "not-needed"
-    client = AsyncOpenAI(base_url=settings.llm_base_url, api_key=key, timeout=60.0)
+    client = AsyncOpenAI(
+        base_url=settings.llm_base_url, api_key=key, timeout=settings.llm_timeout_seconds
+    )
     # Traces each completion with the model that answered: with a combo, it varies per call.
     return wrap_openai(client)

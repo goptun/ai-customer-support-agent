@@ -23,6 +23,7 @@ from support_agent.llm import (
     Intent,
     OpenAICompatibleLLM,
     build_llm,
+    openai_client,
 )
 
 HISTORY = [ConversationMessage(role="user", content="Cadê o pedido ORD-1002?")]
@@ -170,3 +171,12 @@ def test_each_provider_needs_its_endpoint_configured() -> None:
         build_llm(settings(anthropic_api_key=None))
     with pytest.raises(RuntimeError, match="LLM_BASE_URL"):
         build_llm(settings(llm_provider="openai_compatible", llm_base_url=None))
+
+
+def test_slow_endpoints_get_the_configured_timeout() -> None:
+    # Combos answer in tens of seconds; a reasoning model can take minutes.
+    client = openai_client(
+        settings(llm_base_url="http://router:20128/v1", llm_timeout_seconds=300.0)
+    )
+
+    assert client.timeout == 300.0
