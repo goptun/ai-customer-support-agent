@@ -11,7 +11,7 @@ are judged on the turns whose reply rests on tool outputs.
 import math
 import random
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -54,6 +54,7 @@ class ModelIds(BaseModel):
 class TurnResult(BaseModel):
     message: str
     reply: str
+    notices: list[str] = []
     expected_intent: Intent | None
     intent: str
     expected_tool_calls: list[ExpectedToolCall]
@@ -124,10 +125,17 @@ async def evaluate(
     started_at: datetime,
     git_commit: str | None = None,
     seed: int = 0,
+    reset: Callable[[], Awaitable[None]] | None = None,
 ) -> Report:
-    """Run every Conversation through the app (one after another), then judge and score."""
+    """Run every Conversation through the app (one after another), then judge and score.
+
+    `reset`, called before each Conversation, puts the data back as seeded: a Cancellation or
+    Refund in one Conversation must not change what the next one finds.
+    """
     results = []
     for conversation in dataset.conversations:
+        if reset is not None:
+            await reset()
         run = await run_conversation(client, conversation)
         results.append(await _score(conversation, run, judge))
     ids = [result.id for result in results]
@@ -178,10 +186,11 @@ async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -
                 tool_outputs=tool_outputs(calls),
             )
         )
-    reply = observed.reply.casefold()
+    shown = "\n".join([*observed.notices, observed.reply]).casefold()
     return TurnResult(
         message=observed.message,
         reply=observed.reply,
+        notices=observed.notices,
         expected_intent=expected.intent,
         intent=observed.intent,
         expected_tool_calls=expected.tool_calls,
@@ -190,7 +199,7 @@ async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -
         missing_facts=[
             " | ".join(options)
             for options in ([fact] if isinstance(fact, str) else fact for fact in expected.facts)
-            if not any(option.casefold() in reply for option in options)
+            if not any(option.casefold() in shown for option in options)
         ],
         verdict=verdict,
         latency_ms=observed.latency_ms,

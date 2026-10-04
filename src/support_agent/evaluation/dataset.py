@@ -7,7 +7,7 @@ that matter) and the facts its reply must contain.
 
 import enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -40,11 +40,21 @@ class ExpectedToolCall(_Strict):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class AttendantDecision(_Strict):
+    """An Attendant deciding the Customer's pending Approval Requests."""
+
+    decision: Literal["approve", "reject"]
+    reason: str | None = None  # required by the API to reject
+
+
 class CustomerTurn(_Strict):
+    # Decided before the Customer speaks; the decision reaches them as a notice of this turn.
+    attendant: AttendantDecision | None = None
     message: str = Field(min_length=1)  # what the Customer says
     intent: Intent | None = None
     tool_calls: list[ExpectedToolCall] = Field(default_factory=list)  # none expected by default
-    # Each fact must appear in the reply (case-insensitive); a list means any one of them.
+    # Each fact must appear in the reply or its notices (case-insensitive); a list means any
+    # one of them.
     facts: list[str | list[str]] = Field(default_factory=list)
 
 

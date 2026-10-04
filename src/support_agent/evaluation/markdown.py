@@ -126,7 +126,8 @@ def _transcript(result: ConversationResult) -> list[str]:
         lines += [result.description, ""]
     for turn in result.turns:
         lines += [f"**Customer:** {turn.message}", "", "**Agent:**", ""]
-        lines += [f"> {line}" if line else ">" for line in turn.reply.splitlines()]
+        for text in [*turn.notices, turn.reply]:
+            lines += [f"> {line}" if line else ">" for line in text.splitlines()]
         lines.append("")
         if turn.verdict is None:
             lines += ["_No tool output: not judged._", ""]

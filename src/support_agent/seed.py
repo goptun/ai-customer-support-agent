@@ -9,6 +9,7 @@ import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -210,6 +211,15 @@ async def seed(sessions: async_sessionmaker[AsyncSession]) -> None:
             .values([{"carrier": "Correios Mock", **s} for s in SHIPMENTS])
             .on_conflict_do_nothing()
         )
+
+
+async def reset(sessions: async_sessionmaker[AsyncSession]) -> None:
+    """Back to the seeded Orders, with no Conversations or side effects (Tickets, Refunds,
+    Cancellations, Approval Requests) left. The audit log is append-only and stays."""
+    async with sessions.begin() as session:
+        # Every table holding a side effect references an Order or a Conversation.
+        await session.execute(text("TRUNCATE conversations, orders CASCADE"))
+    await seed(sessions)
 
 
 async def main() -> None:
