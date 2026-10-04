@@ -1,4 +1,4 @@
-"""Runs a dataset, scores each Conversation against its labels and renders the report.
+"""Runs a dataset and scores each Conversation against its labels into a report.
 
 Task completion: the observed outcome is the expected one and every turn's reply has its
 required facts. The observed outcome is `escalated` if a Ticket was opened, `clarification`
@@ -8,13 +8,11 @@ avoidable otherwise. Tool calls are compared per turn with retries collapsed. Ha
 are judged on the turns whose reply rests on tool outputs.
 """
 
-import json
 import math
 import random
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Literal
 
 from httpx import AsyncClient
@@ -35,10 +33,11 @@ from support_agent.evaluation.runner import (
     TurnRun,
     run_conversation,
 )
-from support_agent.tools import OrderIdArgs
+from support_agent.llm import Intent
+from support_agent.tools import OrderIdArgs, create_support_ticket
 
 REVIEW_FRACTION = 0.1
-TICKET_TOOL = "create_support_ticket"
+TICKET_TOOL = create_support_ticket.__name__
 # Nodes that act on the Customer's answer to a Cancellation question without a new tool call.
 CONFIRMATION_NODES = frozenset({"await_confirmation", "cancel"})
 
@@ -52,9 +51,9 @@ class ModelIds(BaseModel):
 
 
 class TurnResult(BaseModel):
-    customer: str
+    message: str
     reply: str
-    expected_intent: str | None
+    expected_intent: Intent | None
     intent: str
     expected_tool_calls: list[ExpectedToolCall]
     tool_calls: list[ToolCall]  # retries collapsed
@@ -71,7 +70,7 @@ class TurnResult(BaseModel):
 
 class ConversationResult(BaseModel):
     id: str
-    customer: str
+    customer_id: str
     description: str | None
     expected_outcome: Outcome
     observed_outcome: ObservedOutcome
@@ -151,19 +150,18 @@ async def _score(
         for expected, observed in zip(conversation.turns, run.turns, strict=True)
     ]
     observed_outcome = _observed_outcome(run.turns)
-    expects_ticket = conversation.outcome is Outcome.ESCALATED_APPROPRIATE
-    outcome_ok = observed_outcome == ("escalated" if expects_ticket else conversation.outcome.value)
     escalation: Literal["appropriate", "avoidable"] | None = None
     if observed_outcome == "escalated":
-        escalation = "appropriate" if expects_ticket else "avoidable"
+        escalation = "appropriate" if conversation.outcome.expects_ticket else "avoidable"
     return ConversationResult(
         id=conversation.id,
-        customer=conversation.customer,
+        customer_id=conversation.customer_id,
         description=conversation.description,
         expected_outcome=conversation.outcome,
         observed_outcome=observed_outcome,
         escalation=escalation,
-        completed=outcome_ok and not any(turn.missing_facts for turn in turns),
+        completed=observed_outcome == conversation.outcome.observed_as
+        and not any(turn.missing_facts for turn in turns),
         turns=turns,
     )
 
@@ -174,14 +172,14 @@ async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -
     if calls:
         verdict = await judge.judge(
             JudgedTurn(
-                customer=observed.customer,
+                message=observed.message,
                 reply=observed.reply,
-                tool_outputs=[call.model_dump(mode="json") for call in calls],
+                tool_outputs=tool_outputs(calls),
             )
         )
     reply = observed.reply.casefold()
     return TurnResult(
-        customer=observed.customer,
+        message=observed.message,
         reply=observed.reply,
         expected_intent=expected.intent,
         intent=observed.intent,
@@ -200,12 +198,21 @@ async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -
 
 
 def _observed_outcome(turns: Sequence[TurnRun]) -> ObservedOutcome:
-    if any(call.name == TICKET_TOOL for turn in turns for call in turn.tool_calls):
+    if any(_opened_ticket(call) for turn in turns for call in turn.tool_calls):
         return "escalated"
     last = turns[-1]
     if not last.tool_calls and not CONFIRMATION_NODES & {node.node for node in last.nodes}:
         return "clarification"
     return "resolved"
+
+
+def _opened_ticket(call: ToolCall) -> bool:
+    # A failed call outputs a ToolError (a code, no ticket_id): no Ticket, no escalation.
+    return call.name == TICKET_TOOL and "ticket_id" in (call.output or {})
+
+
+def tool_outputs(calls: Sequence[ToolCall]) -> list[dict[str, Any]]:
+    return [call.model_dump(mode="json") for call in calls]
 
 
 def _collapse_retries(calls: Sequence[ToolCall]) -> list[ToolCall]:
@@ -259,8 +266,7 @@ def _summarize(results: Sequence[ConversationResult]) -> Summary:
         escalation_rate_appropriate=_rate([r.escalation == "appropriate" for r in results]) or 0.0,
         escalation_rate_avoidable=_rate([r.escalation == "avoidable" for r in results]) or 0.0,
         escalations_missed=sum(
-            r.expected_outcome is Outcome.ESCALATED_APPROPRIATE and r.escalation is None
-            for r in results
+            r.expected_outcome.expects_ticket and r.escalation is None for r in results
         ),
         latency_ms=Latency(
             turn=_stats([turn.latency_ms for turn in turns]),
@@ -286,154 +292,3 @@ def percentile(values: Sequence[float], q: float) -> float:
     low = math.floor(position)
     high = min(low + 1, len(ordered) - 1)
     return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
-
-
-def write_report(report: Report, directory: Path) -> tuple[Path, Path]:
-    """Write `<started_at>-<dataset>.json` and `.md` into directory; returns both paths."""
-    directory.mkdir(parents=True, exist_ok=True)
-    stem = f"{report.started_at:%Y-%m-%dT%H%MZ}-{report.dataset}"
-    json_path, markdown_path = directory / f"{stem}.json", directory / f"{stem}.md"
-    json_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    markdown_path.write_text(render_markdown(report), encoding="utf-8")
-    return json_path, markdown_path
-
-
-def render_markdown(report: Report) -> str:
-    summary, models = report.summary, report.models
-    lines = [
-        f"# Evaluation: {report.dataset} — {report.started_at:%Y-%m-%d}",
-        "",
-        f"- Started at: {report.started_at.isoformat()}",
-        f"- Models: classifier `{models.classifier}`, responder `{models.responder}`, "
-        f"judge `{models.judge}`",
-        f"- Commit: `{report.git_commit or 'unknown'}`",
-        f"- Conversations: {summary.conversations} ({summary.turns} Customer turns)",
-        "",
-        "## Metrics",
-        "",
-        "| Metric | Value |",
-        "|---|---|",
-        f"| Task completion | {_pct(summary.task_completion_rate)} |",
-        f"| Tool-call accuracy (per turn) | {_pct(summary.tool_call_accuracy)} |",
-        f"| Intent accuracy (per turn) | {_pct(summary.intent_accuracy)} |",
-        f"| Hallucination rate ({summary.judged_turns} judged turns) "
-        f"| {_pct(summary.hallucination_rate)} |",
-        f"| Escalation rate, appropriate | {_pct(summary.escalation_rate_appropriate)} |",
-        f"| Escalation rate, avoidable | {_pct(summary.escalation_rate_avoidable)} |",
-        f"| Escalations missed | {summary.escalations_missed} |",
-        "",
-        "## Latency (ms)",
-        "",
-        "| Stage | n | p50 | p95 |",
-        "|---|---|---|---|",
-        _latency_row("turn (end to end)", summary.latency_ms.turn),
-        *(_latency_row(f"`{node}`", stats) for node, stats in summary.latency_ms.nodes.items()),
-        "",
-        "## Conversations",
-        "",
-        "| Conversation | Expected | Observed | Completed | Tool calls | Facts | Judge |",
-        "|---|---|---|---|---|---|---|",
-        *(_conversation_row(result) for result in report.conversations),
-        "",
-        "## Issues",
-        "",
-        *(_issues(report.conversations) or ["None."]),
-        "",
-        "## Human review sample",
-        "",
-        "Check the judge: tick each verdict you agree with, note the ones you don't.",
-        "",
-    ]
-    for result in report.conversations:
-        if result.id in report.review_sample:
-            lines.extend(_transcript(result))
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _pct(rate: float | None) -> str:
-    return "n/a" if rate is None else f"{rate:.0%}"
-
-
-def _latency_row(stage: str, stats: LatencyStats) -> str:
-    return f"| {stage} | {stats.count} | {stats.p50:.0f} | {stats.p95:.0f} |"
-
-
-def _conversation_row(result: ConversationResult) -> str:
-    observed: str = result.observed_outcome
-    if result.escalation is not None:
-        observed = f"{observed} ({result.escalation})"
-    tools_ok = sum(turn.tool_calls_ok for turn in result.turns)
-    facts_ok = sum(not turn.missing_facts for turn in result.turns)
-    flagged = sum(bool(turn.verdict and turn.verdict.hallucinated) for turn in result.turns)
-    judged = sum(turn.verdict is not None for turn in result.turns)
-    return (
-        f"| `{result.id}` | {result.expected_outcome.value} | {observed} "
-        f"| {'yes' if result.completed else '**no**'} | {tools_ok}/{len(result.turns)} "
-        f"| {facts_ok}/{len(result.turns)} | {flagged}/{judged} flagged |"
-    )
-
-
-def _issues(results: Sequence[ConversationResult]) -> list[str]:
-    issues = []
-    for result in results:
-        expected = result.expected_outcome.value
-        if result.observed_outcome != expected and not (
-            result.escalation == "appropriate" and expected == Outcome.ESCALATED_APPROPRIATE
-        ):
-            issues.append(
-                f"- `{result.id}`: expected {expected}, observed {result.observed_outcome}"
-            )
-        for number, turn in enumerate(result.turns, start=1):
-            where = f"- `{result.id}` turn {number}"
-            if turn.intent_ok is False:
-                issues.append(f"{where}: Intent {turn.intent}, expected {turn.expected_intent}")
-            if not turn.tool_calls_ok:
-                issues.append(
-                    f"{where}: tool calls {_calls(turn.tool_calls)}, "
-                    f"expected {_calls(turn.expected_tool_calls)}"
-                )
-            if turn.missing_facts:
-                issues.append(f"{where}: missing facts {turn.missing_facts}")
-            if turn.verdict and turn.verdict.hallucinated:
-                issues.append(f"{where}: unsupported claims {turn.verdict.unsupported_claims}")
-    return issues
-
-
-def _calls(calls: Sequence[ToolCall | ExpectedToolCall]) -> str:
-    if not calls:
-        return "none"
-    return ", ".join(
-        f"{call.name}({json.dumps(call.args, ensure_ascii=False, default=str)})" for call in calls
-    )
-
-
-def _transcript(result: ConversationResult) -> list[str]:
-    lines = [f"### `{result.id}`", ""]
-    if result.description:
-        lines += [result.description, ""]
-    for turn in result.turns:
-        lines += [f"**Customer:** {turn.customer}", "", "**Agent:**", ""]
-        lines += [f"> {line}" if line else ">" for line in turn.reply.splitlines()]
-        lines.append("")
-        if turn.verdict is None:
-            lines += ["_No tool output: not judged._", ""]
-            continue
-        outputs: list[dict[str, Any]] = [call.model_dump(mode="json") for call in turn.tool_calls]
-        verdict = (
-            f"hallucinated — {turn.verdict.unsupported_claims}"
-            if turn.verdict.hallucinated
-            else "grounded"
-        )
-        lines += [
-            "<details><summary>Tool outputs</summary>",
-            "",
-            "```json",
-            json.dumps(outputs, ensure_ascii=False, indent=2),
-            "```",
-            "",
-            "</details>",
-            "",
-            f"- [ ] Judge: {verdict}",
-            "",
-        ]
-    return lines

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class JudgedTurn(BaseModel):
-    customer: str
+    message: str  # the Customer's
     reply: str
     tool_outputs: list[dict[str, Any]]  # {name, args, output} per distinct call
 
@@ -59,7 +59,7 @@ class AnthropicJudge:
 def _prompt(turn: JudgedTurn) -> str:
     outputs = json.dumps(turn.tool_outputs, ensure_ascii=False, indent=2, default=str)
     return (
-        f"<customer_message>\n{turn.customer}\n</customer_message>\n\n"
+        f"<customer_message>\n{turn.message}\n</customer_message>\n\n"
         f"<tool_outputs>\n{outputs}\n</tool_outputs>\n\n"
         f"<agent_reply>\n{turn.reply}\n</agent_reply>"
     )

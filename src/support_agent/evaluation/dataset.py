@@ -12,11 +12,22 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from support_agent.llm import Intent
+
 
 class Outcome(enum.StrEnum):
     RESOLVED = "resolved"
     ESCALATED_APPROPRIATE = "escalated_appropriate"  # a Ticket is the right answer
     CLARIFICATION = "clarification"  # the agent should ask instead of acting
+
+    @property
+    def expects_ticket(self) -> bool:
+        return self is Outcome.ESCALATED_APPROPRIATE
+
+    @property
+    def observed_as(self) -> str:
+        """The observed outcome that meets it: an appropriate escalation is a Ticket opened."""
+        return "escalated" if self.expects_ticket else self.value
 
 
 class _Strict(BaseModel):
@@ -30,8 +41,8 @@ class ExpectedToolCall(_Strict):
 
 
 class CustomerTurn(_Strict):
-    customer: str = Field(min_length=1)  # what the Customer says
-    intent: str | None = None
+    message: str = Field(min_length=1)  # what the Customer says
+    intent: Intent | None = None
     tool_calls: list[ExpectedToolCall] = Field(default_factory=list)  # none expected by default
     # Each fact must appear in the reply (case-insensitive); a list means any one of them.
     facts: list[str | list[str]] = Field(default_factory=list)
@@ -39,7 +50,7 @@ class CustomerTurn(_Strict):
 
 class ScriptedConversation(_Strict):
     id: str
-    customer: str  # seeded Customer id
+    customer_id: str  # a seeded Customer
     outcome: Outcome
     description: str | None = None
     turns: list[CustomerTurn] = Field(min_length=1)

@@ -13,7 +13,8 @@ from pydantic import ValidationError
 
 from support_agent.evaluation.dataset import Dataset, load_dataset, parse_dataset
 from support_agent.evaluation.judge import JudgedTurn, Verdict
-from support_agent.evaluation.report import ModelIds, evaluate, percentile, render_markdown
+from support_agent.evaluation.markdown import render_markdown
+from support_agent.evaluation.report import ModelIds, evaluate, percentile
 from support_agent.llm import Classification, Entities, Intent
 
 from .fakes import ScriptedLLM, order_status
@@ -26,39 +27,39 @@ DATASET = """
 name: harness
 conversations:
   - id: in_transit
-    customer: cus_ana
+    customer_id: cus_ana
     outcome: resolved
     turns:
-      - customer: "[eval] cadê o 1002?"
+      - message: "[eval] cadê o 1002?"
         intent: order_status
         tool_calls:
           - name: get_order_status
             args: {order_id: ORD-1002}
         facts: ["03/09/2026", ["BR100000002", "código de rastreio"]]
   - id: carrier_timeout
-    customer: cus_carla
+    customer_id: cus_carla
     outcome: escalated_appropriate
     turns:
-      - customer: "[eval] e o 3003?"
+      - message: "[eval] e o 3003?"
         intent: order_status
         tool_calls: [{name: get_order_status, args: {order_id: ORD-3003}}]
-      - customer: "[eval] tenta de novo o 3003"
+      - message: "[eval] tenta de novo o 3003"
         intent: order_status
         tool_calls:
           - {name: get_order_status, args: {order_id: ORD-3003}}
           - {name: create_support_ticket, args: {reason: tool_failure}}
   - id: needless_human
-    customer: cus_diego
+    customer_id: cus_diego
     outcome: resolved
     turns:
-      - customer: "[eval] quero falar com uma pessoa"
+      - message: "[eval] quero falar com uma pessoa"
         intent: other
         tool_calls: []
   - id: which_order
-    customer: cus_ana
+    customer_id: cus_ana
     outcome: clarification
     turns:
-      - customer: "[eval] meu pedido não chegou"
+      - message: "[eval] meu pedido não chegou"
         intent: order_status
         facts: ["ORD-1002", "não está aqui"]
 """
@@ -164,10 +165,10 @@ def test_a_conversation_needs_a_known_outcome_and_turns() -> None:
     with pytest.raises(ValidationError):
         parse_dataset(
             "name: bad\nconversations:\n"
-            "  - {id: x, customer: cus_ana, outcome: solved, turns: [{customer: oi}]}\n"
+            "  - {id: x, customer_id: cus_ana, outcome: solved, turns: [{message: oi}]}\n"
         )
     with pytest.raises(ValidationError):
-        parse_dataset("name: bad\nconversations:\n  - {id: x, customer: cus_ana, turns: []}\n")
+        parse_dataset("name: bad\nconversations:\n  - {id: x, customer_id: cus_ana, turns: []}\n")
 
 
 def test_order_status_dataset_covers_every_logistics_scenario() -> None:

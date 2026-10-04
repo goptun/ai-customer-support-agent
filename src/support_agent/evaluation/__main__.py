@@ -31,7 +31,8 @@ from support_agent.config import Settings
 from support_agent.db import session_factory
 from support_agent.evaluation.dataset import Dataset, load_dataset
 from support_agent.evaluation.judge import AnthropicJudge
-from support_agent.evaluation.report import ModelIds, evaluate, write_report
+from support_agent.evaluation.markdown import render_markdown
+from support_agent.evaluation.report import ModelIds, Report, evaluate
 from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
 from support_agent.llm import AnthropicLLM
 from support_agent.logistics_mock import create_app as create_logistics_mock
@@ -142,6 +143,16 @@ async def _evaluate(
                 f"tool-call accuracy {summary.tool_call_accuracy:.0%}, "
                 f"turn p95 {summary.latency_ms.turn.p95:.0f} ms"
             )
+
+
+def write_report(report: Report, directory: Path) -> tuple[Path, Path]:
+    """Write `<started_at>-<dataset>.json` and `.md` into directory; returns both paths."""
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = f"{report.started_at:%Y-%m-%dT%H%MZ}-{report.dataset}"
+    json_path, markdown_path = directory / f"{stem}.json", directory / f"{stem}.md"
+    json_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    markdown_path.write_text(render_markdown(report), encoding="utf-8")
+    return json_path, markdown_path
 
 
 def _git_commit() -> str | None:

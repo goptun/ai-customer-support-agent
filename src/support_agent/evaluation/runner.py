@@ -30,7 +30,7 @@ class NodeTiming(BaseModel):
 
 
 class TurnRun(BaseModel):
-    customer: str
+    message: str
     reply: str
     intent: str
     latency_ms: float  # end to end: the /chat request
@@ -61,13 +61,13 @@ class _KeepRuns(Client):
 async def run_conversation(
     client: AsyncClient, conversation: ScriptedConversation
 ) -> ConversationRun:
-    token = await client.post("/auth/dev-token", json={"customer_id": conversation.customer})
+    token = await client.post("/auth/dev-token", json={"customer_id": conversation.customer_id})
     token.raise_for_status()
     headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
     conversation_id: uuid.UUID | None = None
     turns = []
     for turn in conversation.turns:
-        body: dict[str, Any] = {"message": turn.customer}
+        body: dict[str, Any] = {"message": turn.message}
         if conversation_id is not None:
             body["conversation_id"] = str(conversation_id)
         with (
@@ -86,7 +86,7 @@ async def run_conversation(
         turn_run = _find(root, TURN_RUN_NAME)
         turns.append(
             TurnRun(
-                customer=turn.customer,
+                message=turn.message,
                 reply=data["reply"],
                 intent=data["intent"],
                 latency_ms=latency_ms,
