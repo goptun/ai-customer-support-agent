@@ -14,8 +14,9 @@ from langsmith import Client, trace, tracing_context
 from langsmith.run_trees import RunTree
 from pydantic import BaseModel
 
-from support_agent.evaluation.dataset import ScriptedConversation
+from support_agent.evaluation.dataset import AttendantDecision, ScriptedConversation
 from support_agent.graph import TURN_RUN_NAME
+from support_agent.seed import ATTENDANTS
 
 
 class ToolCall(BaseModel):
@@ -29,9 +30,14 @@ class NodeTiming(BaseModel):
     ms: float
 
 
+# The Attendant who decides Approval Requests in scripted Conversations.
+ATTENDANT_ID = ATTENDANTS[0]["id"]
+
+
 class TurnRun(BaseModel):
     message: str
     reply: str
+    notices: list[str] = []  # Attendant decisions shown before the reply
     intent: str
     latency_ms: float  # end to end: the /chat request
     tool_calls: list[ToolCall]  # in call order, retries included
@@ -70,6 +76,8 @@ async def run_conversation(
         body: dict[str, Any] = {"message": turn.message}
         if conversation_id is not None:
             body["conversation_id"] = str(conversation_id)
+        if turn.attendant is not None:
+            await _decide_pending(client, conversation.customer_id, turn.attendant)
         with (
             tracing_context(enabled=True, client=_KeepRuns(), project_name="evaluation"),
             trace("evaluation_turn") as root,
@@ -88,6 +96,7 @@ async def run_conversation(
             TurnRun(
                 message=turn.message,
                 reply=data["reply"],
+                notices=data["notices"],
                 intent=data["intent"],
                 latency_ms=latency_ms,
                 tool_calls=[_tool_call(run) for run in _descendants(turn_run, "tool")],
@@ -99,6 +108,26 @@ async def run_conversation(
             )
         )
     return ConversationRun(id=conversation.id, turns=turns)
+
+
+async def _decide_pending(
+    client: AsyncClient, customer_id: str, decision: AttendantDecision
+) -> None:
+    token = await client.post("/auth/dev-token", json={"attendant_id": ATTENDANT_ID})
+    token.raise_for_status()
+    headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
+    pending = await client.get("/approvals", params={"status": "pending"}, headers=headers)
+    pending.raise_for_status()
+    requests = [r for r in pending.json() if r["customer_id"] == customer_id]
+    if not requests:
+        raise RuntimeError(f"{customer_id} has no pending Approval Request to decide")
+    for request in requests:
+        response = await client.post(
+            f"/approvals/{request['approval_request_id']}",
+            json=decision.model_dump(),
+            headers=headers,
+        )
+        response.raise_for_status()
 
 
 def _find(root: RunTree, name: str) -> RunTree:

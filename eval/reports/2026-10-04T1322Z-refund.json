@@ -1,0 +1,1665 @@
+{
+  "dataset": "refund",
+  "started_at": "2026-10-04T13:22:14.463099Z",
+  "models": {
+    "provider": "openai_compatible",
+    "classifier": "arsenal-vps",
+    "responder": "arsenal-vps",
+    "judge": "arsenal-vps"
+  },
+  "git_commit": "25403c5",
+  "summary": {
+    "conversations": 17,
+    "conversations_failed": 0,
+    "turns": 22,
+    "task_completion_rate": 0.8235294117647058,
+    "tool_call_accuracy": 0.8636363636363636,
+    "intent_accuracy": 0.8636363636363636,
+    "hallucination_rate": 0.5,
+    "judged_turns": 22,
+    "escalation_rate_appropriate": 0.0,
+    "escalation_rate_avoidable": 0.0,
+    "escalations_missed": 0,
+    "latency_ms": {
+      "turn": {
+        "count": 22,
+        "p50": 1050.4873155150563,
+        "p95": 5306.2670692102965
+      },
+      "nodes": {
+        "act": {
+          "count": 19,
+          "p50": 21.823999999999998,
+          "p95": 1098.8394999999778
+        },
+        "check_refunds": {
+          "count": 3,
+          "p50": 6.059,
+          "p95": 13.534399999999998
+        },
+        "classify_intent": {
+          "count": 22,
+          "p50": 942.1775,
+          "p95": 1411.5270999999998
+        },
+        "resolve_context": {
+          "count": 19,
+          "p50": 1.574,
+          "p95": 2.4947999999999997
+        },
+        "respond": {
+          "count": 22,
+          "p50": 1.99,
+          "p95": 1340.7356000000002
+        }
+      }
+    }
+  },
+  "conversations": [
+    {
+      "id": "refund_delivered_recently",
+      "customer_id": "cus_ana",
+      "description": "Delivered 13 days ago; the default amount is the maximum.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-1001, o fone não funcionou direito.",
+          "reply": "O pedido ORD-1001 tem direito a reembolso. Solicitei o reembolso de R$ 249,90, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #1 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": null
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-1001, o fone não funcionou direito."
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1001",
+                "refund_id": 1,
+                "approval_request_id": "331ffa34-8097-42b5-9c4f-08f5ea02b56e",
+                "amount_cents": 24990,
+                "max_cents": 24990,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-1001 tem direito a reembolso",
+              "Todo reembolso é aprovado por um atendente antes de ser emitido",
+              "O reembolso #1 está aguardando aprovação"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 1070.86211303249,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 948.5409999999999
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.343
+            },
+            {
+              "node": "act",
+              "ms": 49.17
+            },
+            {
+              "node": "respond",
+              "ms": 1.692
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_lower_amount",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero um reembolso parcial de R$ 100 do pedido 1001, veio sem o cabo.",
+          "reply": "O pedido ORD-1001 tem direito a reembolso. Solicitei o reembolso de R$ 100,00, como você pediu (o máximo seria R$ 249,90). Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #2 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": 10000
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "1001",
+                "amount_cents": 10000,
+                "reason": "Quero um reembolso parcial de R$ 100 do pedido 1001, veio sem o cabo."
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1001",
+                "refund_id": 2,
+                "approval_request_id": "67000fa8-c735-4f7b-a5cf-fb2336647571",
+                "amount_cents": 10000,
+                "max_cents": 24990,
+                "requested_cents": 10000,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-1001 tem direito a reembolso.",
+              "o reembolso #2 está aguardando aprovação."
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 1009.4118160195649,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 935.8140000000001
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.4760000000000002
+            },
+            {
+              "node": "act",
+              "ms": 36.887
+            },
+            {
+              "node": "respond",
+              "ms": 1.451
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_capped",
+      "customer_id": "cus_ana",
+      "description": "Asks for more than was paid; the amount is capped and the limit explained.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Me reembolsa R$ 500,00 do pedido ORD-1001",
+          "reply": "O pedido ORD-1001 tem direito a reembolso. Você pediu R$ 500,00, mas o máximo que pode ser reembolsado neste pedido é R$ 249,90 (o valor pago menos reembolsos anteriores), então solicitei o reembolso de R$ 249,90. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #3 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": 50000
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": 50000,
+                "reason": "Me reembolsa R$ 500,00 do pedido ORD-1001"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1001",
+                "refund_id": 3,
+                "approval_request_id": "62d0f1a8-85d0-4b86-8370-7127a278f29c",
+                "amount_cents": 24990,
+                "max_cents": 24990,
+                "requested_cents": 50000,
+                "capped": true,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-1001 tem direito a reembolso.",
+              "todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #3 está aguardando aprovação."
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 1230.394760146737,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1130.872
+            },
+            {
+              "node": "resolve_context",
+              "ms": 2.4819999999999998
+            },
+            {
+              "node": "act",
+              "ms": 39.701
+            },
+            {
+              "node": "respond",
+              "ms": 1.514
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_shipment_lost",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": false,
+      "turns": [
+        {
+          "message": "A transportadora perdeu minha cafeteira, pedido 1004. Quero meu dinheiro de volta.",
+          "reply": "Olá! Verifiquei aqui que o seu pedido ORD‑1004 está marcado como **extraviado** pela transportadora (última atualização em 29/08/2026 – Curitiba/PR). \n\nVamos abrir um processo interno para analisar a devolução do valor pago. Em breve, o setor responsável entrará em contato para confirmar os próximos passos. \n\nQualquer dúvida, estou à disposição!\n\nTambém vi que você quer um reembolso. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "1004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1004",
+                "status": "shipped",
+                "placed_at": "2026-08-20T12:00:00Z",
+                "promised_delivery_date": "2026-08-30",
+                "delivered_at": null,
+                "days_late": 2,
+                "shipment": {
+                  "tracking_code": "BR100000004",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "lost",
+                    "latest_event": {
+                      "at": "2026-08-29T12:00:00Z",
+                      "status": "lost",
+                      "description": "Objeto extraviado",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": false,
+          "missing_facts": [
+            "R$ 329,00",
+            "aguardando aprovação"
+          ],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 5435.721436049789,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1413.359
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.441
+            },
+            {
+              "node": "act",
+              "ms": 9.745999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 3981.9300000000003
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_late",
+      "customer_id": "cus_bruno",
+      "description": "15 days past the promised date, beyond the 10 the policy allows.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": false,
+      "turns": [
+        {
+          "message": "O monitor do pedido ORD-2002 está atrasado há semanas, quero o reembolso.",
+          "reply": "Olá! Entendo a frustração com o atraso do pedido ORD‑2002. No momento, só tenho a informação de que ele está com entrega atrasada, mas não disponho de detalhes sobre a política de reembolso. Posso abrir um chamado para que nossa equipe verifique a possibilidade de reembolso ou outra solução para você. Por favor, confirme se deseja que façamos isso.\n\nTambém vi que você quer um reembolso. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-2002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2002",
+                "status": "shipped",
+                "placed_at": "2026-08-02T12:00:00Z",
+                "promised_delivery_date": "2026-08-17",
+                "delivered_at": null,
+                "days_late": 15,
+                "shipment": {
+                  "tracking_code": "BR200000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "delayed",
+                    "latest_event": {
+                      "at": "2026-08-16T12:00:00Z",
+                      "status": "delayed",
+                      "description": "Entrega atrasada por problema operacional",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": false,
+          "missing_facts": [
+            "R$ 1.499,00",
+            "aguardando aprovação"
+          ],
+          "verdict": {
+            "unsupported_claims": [
+              "Você quer um reembolso"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 2748.4151050448418,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1376.721
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.538
+            },
+            {
+              "node": "act",
+              "ms": 9.020999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 1327.428
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_not_late_enough",
+      "customer_id": "cus_ana",
+      "description": "In transit and within the promised date; the agent offers a Ticket.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do ORD-1002",
+          "reply": "O pedido ORD-1002 ainda está a caminho, sem extravio informado pela transportadora e sem passar de 10 dias de atraso em relação à previsão de entrega. Pela Política de Reembolso e pela Política de Atrasos e Extravios, o reembolso de um pedido a caminho só é possível nesses casos. Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1002",
+                "amount_cents": null,
+                "reason": "Quero reembolso do ORD-1002"
+              },
+              "output": {
+                "kind": "refund_refused",
+                "order_id": "ORD-1002",
+                "reason": "not_late_enough",
+                "delivery_window_days": 30,
+                "late_after_days": 10
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-1002 ainda está a caminho",
+              "sem extravio informado pela transportadora"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 847.1385557204485,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 795.891
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.7249999999999999
+            },
+            {
+              "node": "act",
+              "ms": 15.471
+            },
+            {
+              "node": "respond",
+              "ms": 1.9689999999999999
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_returned_not_late_enough",
+      "customer_id": "cus_bruno",
+      "description": "Returned to sender only 5 days past the promised date; not eligible yet.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": false,
+      "turns": [
+        {
+          "message": "A cadeira do pedido 2004 voltou pro remetente. Quero reembolso.",
+          "reply": "Olá! O pedido ORD‑2004 foi devolvido ao remetente, conforme a última atualização em 26/08/2026. Entendo que você deseja o reembolso. No momento não possuo informações específicas sobre o procedimento de reembolso nos nossos registros, mas já estou encaminhando sua solicitação para a equipe responsável. Em breve retornaremos com a posição. Obrigado pela paciência!\n\nTambém vi que você quer um reembolso. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "2004"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-2004",
+                "status": "shipped",
+                "placed_at": "2026-08-17T12:00:00Z",
+                "promised_delivery_date": "2026-08-27",
+                "delivered_at": null,
+                "days_late": 5,
+                "shipment": {
+                  "tracking_code": "BR200000004",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "returned",
+                    "latest_event": {
+                      "at": "2026-08-26T12:00:00Z",
+                      "status": "returned",
+                      "description": "Objeto devolvido ao remetente",
+                      "location": "São Paulo/SP"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": false,
+          "missing_facts": [
+            "10 dias",
+            "chamado"
+          ],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 2846.6340992599726,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1465.26
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.574
+            },
+            {
+              "node": "act",
+              "ms": 7.549
+            },
+            {
+              "node": "respond",
+              "ms": 1341.4360000000001
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_delivery_window_expired",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero devolver a luminária e ter reembolso, pedido ORD-3002",
+          "reply": "O pedido ORD-3002 foi entregue há mais de 30 dias, e pela Política de Reembolso só é possível pedir reembolso de pedidos entregues há no máximo 30 dias. Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-3002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-3002",
+                "amount_cents": null,
+                "reason": "Quero devolver a luminária e ter reembolso, pedido ORD-3002"
+              },
+              "output": {
+                "kind": "refund_refused",
+                "order_id": "ORD-3002",
+                "reason": "delivery_window_expired",
+                "delivery_window_days": 30,
+                "late_after_days": 10
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1030.1125179976225,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 977.615
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.485
+            },
+            {
+              "node": "act",
+              "ms": 14.529
+            },
+            {
+              "node": "respond",
+              "ms": 2.053
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_not_dispatched",
+      "customer_id": "cus_ana",
+      "description": "Not Dispatched yet; a Cancellation is the way to get the money back.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero o reembolso do pedido 1003",
+          "reply": "O pedido ORD-1003 ainda não foi enviado, então não cabe reembolso: você pode cancelá-lo, e se ele já estiver pago o reembolso integral é feito automaticamente (Política de Cancelamento). Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "1003",
+                "amount_cents": null,
+                "reason": "Quero o reembolso do pedido 1003"
+              },
+              "output": {
+                "kind": "refund_refused",
+                "order_id": "ORD-1003",
+                "reason": "not_dispatched",
+                "delivery_window_days": 30,
+                "late_after_days": 10
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "\"você pode cancelá-lo\" – the tool output does not indicate that the order can be canceled",
+              "\"se ele já estiver pago o reembolso integral é feito automaticamente (Política de Cancelamento)\" – the tool output does not provide any information about automatic full refunds or payment status"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 928.0635858885944,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 862.093
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.771
+            },
+            {
+              "node": "act",
+              "ms": 21.823999999999998
+            },
+            {
+              "node": "respond",
+              "ms": 1.598
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_order_cancelled",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-2003",
+          "reply": "O pedido ORD-2003 está cancelado: se ele estava pago, o reembolso integral já foi emitido no cancelamento (Política de Cancelamento). Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2003",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-2003"
+              },
+              "output": {
+                "kind": "refund_refused",
+                "order_id": "ORD-2003",
+                "reason": "order_cancelled",
+                "delivery_window_days": 30,
+                "late_after_days": 10
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "se ele estava pago, o reembolso integral já foi emitido no cancelamento (Política de Cancelamento)."
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 872.9916410520673,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 810.063
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.5
+            },
+            {
+              "node": "act",
+              "ms": 14.0
+            },
+            {
+              "node": "respond",
+              "ms": 1.814
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_carrier_unavailable",
+      "customer_id": "cus_carla",
+      "description": "Only the carrier can tell whether it was lost, and it times out.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-3003",
+          "reply": "Não consegui consultar seu pedido agora. Tente novamente em alguns minutos.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-3003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-3003",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-3003"
+              },
+              "output": {
+                "kind": "error",
+                "code": "upstream_unavailable",
+                "order_id": "ORD-3003"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "\"Não consegui consultar seu pedido agora.\""
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 11462.798246182501,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 881.0120000000001
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.6
+            },
+            {
+              "node": "act",
+              "ms": 10545.865
+            },
+            {
+              "node": "respond",
+              "ms": 1.553
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_someone_elses_order",
+      "customer_id": "cus_carla",
+      "description": "ORD-1001 is Ana's; Carla gets the same answer as for a missing Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-1001",
+          "reply": "Não encontrei o pedido ORD-1001 entre os seus pedidos. Confere o número e me manda de novo?",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-1001"
+              },
+              "output": {
+                "kind": "error",
+                "code": "not_owned",
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 892.8090971894562,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 845.2800000000001
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.6720000000000002
+            },
+            {
+              "node": "act",
+              "ms": 9.446
+            },
+            {
+              "node": "respond",
+              "ms": 1.498
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_already_pending",
+      "customer_id": "cus_bruno",
+      "description": "Asking again while the first Refund awaits approval opens no second one.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do ORD-2002, está muito atrasado",
+          "reply": "O pedido ORD-2002 tem direito a reembolso. Solicitei o reembolso de R$ 1.499,00, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #4 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.\n\nTambém vi que você quer saber o status do pedido. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002",
+                "amount_cents": null,
+                "reason": "Quero reembolso do ORD-2002, está muito atrasado"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-2002",
+                "refund_id": 4,
+                "approval_request_id": "d2f9b0db-0060-4a8a-a807-280356f74bd3",
+                "amount_cents": 149900,
+                "max_cents": 149900,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1337.1633160859346,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1266.326
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.643
+            },
+            {
+              "node": "act",
+              "ms": 35.36
+            },
+            {
+              "node": "respond",
+              "ms": 2.822
+            }
+          ]
+        },
+        {
+          "message": "Pede de novo o reembolso do ORD-2002, por favor",
+          "reply": "O pedido ORD-2002 já tem um reembolso de R$ 1.499,00 aguardando aprovação de um atendente (reembolso #4), então não abri outro nem mudei o valor dele. Você pode me perguntar o status do reembolso quando quiser; se precisar de outro valor, posso abrir um chamado para um atendente.\n\nTambém vi que você quer saber o status do pedido. É só me responder que eu sigo com isso em seguida.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002",
+                "amount_cents": null,
+                "reason": "Pede de novo o reembolso do ORD-2002, por favor"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-2002",
+                "refund_id": 4,
+                "approval_request_id": "d2f9b0db-0060-4a8a-a807-280356f74bd3",
+                "amount_cents": 149900,
+                "max_cents": 149900,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": true
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 934.9952200427651,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 885.0029999999999
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.5399999999999998
+            },
+            {
+              "node": "act",
+              "ms": 18.218999999999998
+            },
+            {
+              "node": "respond",
+              "ms": 1.498
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_approved",
+      "customer_id": "cus_ana",
+      "description": "The Customer keeps chatting while the Refund awaits approval; once an Attendant approves it, the next turn shows the decision and the status.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-1004, foi extraviado",
+          "reply": "O pedido ORD-1004 tem direito a reembolso. Solicitei o reembolso de R$ 329,00, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #5 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1004",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-1004, foi extraviado"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1004",
+                "refund_id": 5,
+                "approval_request_id": "cec43209-ae4f-4612-99c3-fdd86f65f35e",
+                "amount_cents": 32900,
+                "max_cents": 32900,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-1004 tem direito a reembolso.",
+              "Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 821.9758761115372,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 755.3109999999999
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.568
+            },
+            {
+              "node": "act",
+              "ms": 31.502000000000002
+            },
+            {
+              "node": "respond",
+              "ms": 1.746
+            }
+          ]
+        },
+        {
+          "message": "Enquanto isso, onde está o ORD-1002?",
+          "reply": "O pedido **ORD‑1002** já foi enviado e está **em trânsito** pela Correios Mock (código de rastreio BR100000002). A última atualização, de 31/08/2026 em Curitiba/PR, indica que o objeto está a caminho da unidade de destino. A previsão de entrega é **03/09/2026**.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-1002"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-1002",
+                "status": "shipped",
+                "placed_at": "2026-08-26T12:00:00Z",
+                "promised_delivery_date": "2026-09-03",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": {
+                  "tracking_code": "BR100000002",
+                  "carrier": "Correios Mock",
+                  "tracking": {
+                    "status": "in_transit",
+                    "latest_event": {
+                      "at": "2026-08-31T12:00:00Z",
+                      "status": "in_transit",
+                      "description": "Objeto em trânsito para a unidade de destino",
+                      "location": "Curitiba/PR"
+                    }
+                  },
+                  "tracking_error": null
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1702.363234013319,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 704.744
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.4580000000000002
+            },
+            {
+              "node": "act",
+              "ms": 8.437
+            },
+            {
+              "node": "respond",
+              "ms": 960.076
+            }
+          ]
+        },
+        {
+          "message": "E o meu reembolso do ORD-1004, como está?",
+          "reply": "Reembolsos do pedido ORD-1004:\n- Reembolso #5 do pedido ORD-1004, de R$ 329,00: emitido.",
+          "notices": [
+            "O reembolso #5 de R$ 329,00 do pedido ORD-1004 foi aprovado por um atendente e emitido."
+          ],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "get_refund_status",
+              "args": {
+                "order_id": "ORD-1004"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_refund_status",
+              "args": {
+                "order_id": "ORD-1004"
+              },
+              "output": {
+                "kind": "refund_status",
+                "order_id": "ORD-1004",
+                "refunds": [
+                  {
+                    "refund_id": 5,
+                    "order_id": "ORD-1004",
+                    "amount_cents": 32900,
+                    "status": "issued",
+                    "created_at": "2026-10-04T13:23:10.593426Z"
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1158.1782950088382,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1099.5490000000002
+            },
+            {
+              "node": "check_refunds",
+              "ms": 14.364999999999998
+            },
+            {
+              "node": "respond",
+              "ms": 2.214
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_rejected",
+      "customer_id": "cus_bruno",
+      "description": "The Attendant's reason for rejecting reaches the Customer, with a Ticket offered.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do monitor, pedido ORD-2002",
+          "reply": "O pedido ORD-2002 tem direito a reembolso. Solicitei o reembolso de R$ 1.499,00, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #6 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-2002",
+                "amount_cents": null,
+                "reason": "Quero reembolso do monitor, pedido ORD-2002"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-2002",
+                "refund_id": 6,
+                "approval_request_id": "327edb62-9692-4a57-8548-f729ed9c521b",
+                "amount_cents": 149900,
+                "max_cents": 149900,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-2002 tem direito a reembolso.",
+              "Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 886.9140287861228,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 813.569
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.613
+            },
+            {
+              "node": "act",
+              "ms": 37.164
+            },
+            {
+              "node": "respond",
+              "ms": 1.88
+            }
+          ]
+        },
+        {
+          "message": "Qual o status do meu reembolso?",
+          "reply": "Seus reembolsos:\n- Reembolso #6 do pedido ORD-2002, de R$ 1.499,00: recusado.",
+          "notices": [
+            "O reembolso #6 de R$ 1.499,00 do pedido ORD-2002 foi recusado por um atendente. Motivo: A transportadora confirmou a entrega para amanhã. Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir."
+          ],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "get_refund_status",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_refund_status",
+              "args": {
+                "order_id": null
+              },
+              "output": {
+                "kind": "refund_status",
+                "order_id": null,
+                "refunds": [
+                  {
+                    "refund_id": 6,
+                    "order_id": "ORD-2002",
+                    "amount_cents": 149900,
+                    "status": "rejected",
+                    "created_at": "2026-10-04T13:23:18.629015Z"
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 996.1200752295554,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 948.8969999999999
+            },
+            {
+              "node": "check_refunds",
+              "ms": 6.059
+            },
+            {
+              "node": "respond",
+              "ms": 2.011
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_nothing_left",
+      "customer_id": "cus_ana",
+      "description": "After the full Refund is approved, nothing is left to refund on the Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero reembolso do pedido ORD-1001",
+          "reply": "O pedido ORD-1001 tem direito a reembolso. Solicitei o reembolso de R$ 249,90, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #7 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": null,
+                "reason": "Quero reembolso do pedido ORD-1001"
+              },
+              "output": {
+                "kind": "refund_requested",
+                "order_id": "ORD-1001",
+                "refund_id": 7,
+                "approval_request_id": "9e7234a0-d184-4969-b88e-ac9575c17214",
+                "amount_cents": 24990,
+                "max_cents": 24990,
+                "requested_cents": null,
+                "capped": false,
+                "already_pending": false
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "O pedido ORD-1001 tem direito a reembolso.",
+              "o reembolso #7 está aguardando aprovação"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 1335.2693472988904,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1241.904
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.7910000000000001
+            },
+            {
+              "node": "act",
+              "ms": 43.088
+            },
+            {
+              "node": "respond",
+              "ms": 2.56
+            }
+          ]
+        },
+        {
+          "message": "Quero mais um reembolso do ORD-1001",
+          "reply": "Os reembolsos do pedido ORD-1001 já somam o valor pago nele, então não há mais valor a reembolsar (Política de Reembolso). Se quiser contestar, posso abrir um chamado para um atendente analisar o seu caso: é só me pedir.",
+          "notices": [
+            "O reembolso #7 de R$ 249,90 do pedido ORD-1001 foi aprovado por um atendente e emitido."
+          ],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "create_refund",
+              "args": {
+                "order_id": "ORD-1001",
+                "amount_cents": null,
+                "reason": "Quero mais um reembolso do ORD-1001"
+              },
+              "output": {
+                "kind": "refund_refused",
+                "order_id": "ORD-1001",
+                "reason": "nothing_left",
+                "delivery_window_days": 30,
+                "late_after_days": 10
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1141.5264140814543,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1063.232
+            },
+            {
+              "node": "resolve_context",
+              "ms": 2.61
+            },
+            {
+              "node": "act",
+              "ms": 25.246000000000002
+            },
+            {
+              "node": "respond",
+              "ms": 2.443
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "refund_status_none",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Qual o status do meu reembolso?",
+          "reply": "Não encontrei reembolsos seus.",
+          "notices": [],
+          "expected_intent": "refund",
+          "intent": "refund",
+          "expected_tool_calls": [
+            {
+              "name": "get_refund_status",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_refund_status",
+              "args": {
+                "order_id": null
+              },
+              "output": {
+                "kind": "refund_status",
+                "order_id": null,
+                "refunds": []
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 762.3999500647187,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 721.074
+            },
+            {
+              "node": "check_refunds",
+              "ms": 5.984999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 2.621
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ],
+  "review_sample": [
+    "refund_already_pending",
+    "refund_approved"
+  ]
+}

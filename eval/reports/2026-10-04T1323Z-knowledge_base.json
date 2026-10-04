@@ -1,0 +1,711 @@
+{
+  "dataset": "knowledge_base",
+  "started_at": "2026-10-04T13:23:41.940087Z",
+  "models": {
+    "provider": "openai_compatible",
+    "classifier": "arsenal-vps",
+    "responder": "arsenal-vps",
+    "judge": "arsenal-vps"
+  },
+  "git_commit": "25403c5",
+  "summary": {
+    "conversations": 9,
+    "conversations_failed": 0,
+    "turns": 9,
+    "task_completion_rate": 1.0,
+    "tool_call_accuracy": 1.0,
+    "intent_accuracy": 1.0,
+    "hallucination_rate": 0.0,
+    "judged_turns": 9,
+    "escalation_rate_appropriate": 0.0,
+    "escalation_rate_avoidable": 0.0,
+    "escalations_missed": 0,
+    "latency_ms": {
+      "turn": {
+        "count": 9,
+        "p50": 1653.8526020012796,
+        "p95": 1983.701069559902
+      },
+      "nodes": {
+        "classify_intent": {
+          "count": 9,
+          "p50": 860.229,
+          "p95": 1164.4
+        },
+        "consult_knowledge_base": {
+          "count": 9,
+          "p50": 36.933,
+          "p95": 105.21039999999996
+        },
+        "respond": {
+          "count": 9,
+          "p50": 664.437,
+          "p95": 805.2012
+        }
+      }
+    }
+  },
+  "conversations": [
+    {
+      "id": "faq_exchange_window",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Qual o prazo para trocar um produto?",
+          "reply": "Política de Trocas — Prazo para troca:\nVocê pode solicitar a troca de um produto em até 30 dias corridos a partir da data de entrega do pedido.\n\nPolítica de Reembolso — Quando posso pedir reembolso:\nVocê pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.\n\nPolítica de Entrega — Prazos de entrega:\nO prazo de entrega é informado no checkout e no e-mail de confirmação do pedido. Ele começa a contar a partir da confirmação do pagamento. Para capitais e regiões metropolitanas do Sul e do Sudeste, o prazo costuma ser de 3 a 7 dias úteis. Para as demais regiões, de 7 a 15 dias úteis.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Qual o prazo para trocar um produto?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Trocas",
+                    "section": "Prazo para troca",
+                    "content": "Você pode solicitar a troca de um produto em até 30 dias corridos a partir da data de entrega do pedido.",
+                    "score": 0.7650703322645855
+                  },
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Quando posso pedir reembolso",
+                    "content": "Você pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.",
+                    "score": 0.5713017890354013
+                  },
+                  {
+                    "title": "Política de Entrega",
+                    "section": "Prazos de entrega",
+                    "content": "O prazo de entrega é informado no checkout e no e-mail de confirmação do pedido. Ele começa a contar a partir da confirmação do pagamento. Para capitais e regiões metropolitanas do Sul e do Sudeste, o prazo costuma ser de 3 a 7 dias úteis. Para as demais regiões, de 7 a 15 dias úteis.",
+                    "score": 0.5666539165916985
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1568.6080711893737,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 834.725
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 39.791
+            },
+            {
+              "node": "respond",
+              "ms": 630.9449999999999
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_right_of_withdrawal",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Me arrependi da compra, até quando posso devolver sem precisar explicar o motivo?",
+          "reply": "Segundo a Política de Devolução e Direito de Arrependimento, você pode desistir da compra em até **7 dias corridos a partir do recebimento do produto**, sem precisar justificar o motivo.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Me arrependi da compra, até quando posso devolver sem precisar explicar o motivo?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Devolução e Direito de Arrependimento",
+                    "section": "Direito de arrependimento",
+                    "content": "Conforme o Código de Defesa do Consumidor, você pode desistir da compra em até 7 dias corridos a partir do recebimento do produto, sem precisar justificar o motivo.",
+                    "score": 0.5974814401677084
+                  },
+                  {
+                    "title": "Política de Trocas",
+                    "section": "Condições para troca",
+                    "content": "O produto deve ser devolvido sem sinais de uso, na embalagem original e com todos os acessórios e manuais. Produtos personalizados não podem ser trocados, exceto em caso de defeito.",
+                    "score": 0.5365602976002944
+                  },
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Quando posso pedir reembolso",
+                    "content": "Você pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.",
+                    "score": 0.5007685009394841
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1653.8526020012796,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 881.137
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 41.272000000000006
+            },
+            {
+              "node": "respond",
+              "ms": 701.005
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_free_shipping",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "A partir de qual valor o frete é grátis?",
+          "reply": "Política de Frete — Frete grátis:\nCompras acima de R$ 299,00 têm frete grátis para todo o Brasil, exceto produtos volumosos sinalizados na página do produto.\n\nPolítica de Frete — Valor do frete:\nO valor do frete é calculado no checkout a partir do CEP de entrega, do peso e das dimensões dos produtos.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "A partir de qual valor o frete é grátis?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Frete",
+                    "section": "Frete grátis",
+                    "content": "Compras acima de R$ 299,00 têm frete grátis para todo o Brasil, exceto produtos volumosos sinalizados na página do produto.",
+                    "score": 0.6048659866823191
+                  },
+                  {
+                    "title": "Política de Frete",
+                    "section": "Valor do frete",
+                    "content": "O valor do frete é calculado no checkout a partir do CEP de entrega, do peso e das dimensões dos produtos.",
+                    "score": 0.5219797700794541
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1441.7896601371467,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 746.756
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 36.933
+            },
+            {
+              "node": "respond",
+              "ms": 628.035
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_refund_timing",
+      "customer_id": "cus_diego",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Depois que o reembolso é aprovado, em quanto tempo o dinheiro volta no Pix?",
+          "reply": "Política de Reembolso — Aprovação e prazo:\nTodo pedido de reembolso é analisado e aprovado por um atendente antes de ser emitido. Depois de aprovado, o valor é estornado na mesma forma de pagamento: no cartão de crédito, o estorno aparece em até duas faturas; no Pix, em até 5 dias úteis.\n\nPolítica de Pagamentos — Confirmação do pagamento:\nPagamentos com Pix são confirmados em poucos minutos; com cartão de crédito, em até 1 dia útil; com boleto, em até 3 dias úteis após o pagamento. O prazo de entrega começa a contar após a confirmação.\n\nPolítica de Reembolso — Quando posso pedir reembolso:\nVocê pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Depois que o reembolso é aprovado, em quanto tempo o dinheiro volta no Pix?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Aprovação e prazo",
+                    "content": "Todo pedido de reembolso é analisado e aprovado por um atendente antes de ser emitido. Depois de aprovado, o valor é estornado na mesma forma de pagamento: no cartão de crédito, o estorno aparece em até duas faturas; no Pix, em até 5 dias úteis.",
+                    "score": 0.8093926801282082
+                  },
+                  {
+                    "title": "Política de Pagamentos",
+                    "section": "Confirmação do pagamento",
+                    "content": "Pagamentos com Pix são confirmados em poucos minutos; com cartão de crédito, em até 1 dia útil; com boleto, em até 3 dias úteis após o pagamento. O prazo de entrega começa a contar após a confirmação.",
+                    "score": 0.7594144227928907
+                  },
+                  {
+                    "title": "Política de Reembolso",
+                    "section": "Quando posso pedir reembolso",
+                    "content": "Você pode pedir reembolso de um pedido entregue há no máximo 30 dias, de um pedido que a transportadora informou como extraviado, ou de um pedido com atraso de mais de 10 dias em relação à data prevista de entrega.",
+                    "score": 0.7185088322007614
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 2110.9284819103777,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1267.8780000000002
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 140.754
+            },
+            {
+              "node": "respond",
+              "ms": 664.437
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_warranty",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Qual a garantia dos produtos para defeito de fabricação?",
+          "reply": "Política de Garantia e Produtos com Defeito — Garantia legal:\nTodos os produtos têm garantia legal de 90 dias para defeitos de fabricação, contados a partir da data de entrega. Alguns produtos também têm garantia do fabricante, informada na página do produto.\n\nPolítica de Garantia e Produtos com Defeito — Produto com defeito:\nSe o produto chegar com defeito ou apresentar defeito dentro da garantia, fale com um atendente com o número do pedido e fotos ou vídeo do problema. Você pode escolher entre a troca, o reparo ou o reembolso do valor pago.\n\nPolítica de Garantia e Produtos com Defeito — Produto danificado na entrega:\nSe a embalagem chegar violada ou o produto danificado, recuse a entrega ou registre o problema com um atendente em até 7 dias corridos a partir do recebimento.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Qual a garantia dos produtos para defeito de fabricação?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Garantia e Produtos com Defeito",
+                    "section": "Garantia legal",
+                    "content": "Todos os produtos têm garantia legal de 90 dias para defeitos de fabricação, contados a partir da data de entrega. Alguns produtos também têm garantia do fabricante, informada na página do produto.",
+                    "score": 0.761463749976311
+                  },
+                  {
+                    "title": "Política de Garantia e Produtos com Defeito",
+                    "section": "Produto com defeito",
+                    "content": "Se o produto chegar com defeito ou apresentar defeito dentro da garantia, fale com um atendente com o número do pedido e fotos ou vídeo do problema. Você pode escolher entre a troca, o reparo ou o reembolso do valor pago.",
+                    "score": 0.6599833837306023
+                  },
+                  {
+                    "title": "Política de Garantia e Produtos com Defeito",
+                    "section": "Produto danificado na entrega",
+                    "content": "Se a embalagem chegar violada ou o produto danificado, recuse a entrega ou registre o problema com um atendente em até 7 dias corridos a partir do recebimento.",
+                    "score": 0.5933500838925817
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1772.0538908615708,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 868.524
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 35.081
+            },
+            {
+              "node": "respond",
+              "ms": 839.858
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_boleto_expiry",
+      "customer_id": "cus_carla",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "O que acontece se eu não pagar o boleto?",
+          "reply": "Política de Pagamentos — Boleto não pago:\nO boleto vence em 3 dias corridos. Se não for pago até o vencimento, o pedido é cancelado automaticamente e nada é cobrado.\n\nPolítica de Atrasos e Extravios — Pedido extraviado:\nQuando a transportadora informa que o pedido foi extraviado, você pode solicitar o reembolso integral do valor pago ou o reenvio do produto, conforme disponibilidade em estoque.\n\nPolítica de Cancelamento — Quando posso cancelar:\nUm pedido pode ser cancelado enquanto ainda não foi enviado à transportadora, ou seja, enquanto está aguardando pagamento, com pagamento confirmado ou em separação. O cancelamento vale para o pedido inteiro; não é possível cancelar apenas parte dos itens.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "O que acontece se eu não pagar o boleto?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Pagamentos",
+                    "section": "Boleto não pago",
+                    "content": "O boleto vence em 3 dias corridos. Se não for pago até o vencimento, o pedido é cancelado automaticamente e nada é cobrado.",
+                    "score": 0.7041839639075179
+                  },
+                  {
+                    "title": "Política de Atrasos e Extravios",
+                    "section": "Pedido extraviado",
+                    "content": "Quando a transportadora informa que o pedido foi extraviado, você pode solicitar o reembolso integral do valor pago ou o reenvio do produto, conforme disponibilidade em estoque.",
+                    "score": 0.4624869048967145
+                  },
+                  {
+                    "title": "Política de Cancelamento",
+                    "section": "Quando posso cancelar",
+                    "content": "Um pedido pode ser cancelado enquanto ainda não foi enviado à transportadora, ou seja, enquanto está aguardando pagamento, com pagamento confirmado ou em separação. O cancelamento vale para o pedido inteiro; não é possível cancelar apenas parte dos itens.",
+                    "score": 0.4552898168647185
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1792.8599510341883,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1009.183
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 35.896
+            },
+            {
+              "node": "respond",
+              "ms": 719.0640000000001
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_support_hours",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Qual o horário de atendimento dos atendentes humanos?",
+          "reply": "Segundo a Política de Atendimento — Canais e horários, os atendentes humanos atendem de segunda a sexta, das 8h às 20h, e aos sábados, das 9h às 14h, exceto feriados nacionais.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Qual o horário de atendimento dos atendentes humanos?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": [
+                  {
+                    "title": "Política de Atendimento",
+                    "section": "Canais e horários",
+                    "content": "O assistente virtual atende 24 horas por dia. Os atendentes humanos atendem de segunda a sexta, das 8h às 20h, e aos sábados, das 9h às 14h, exceto feriados nacionais.",
+                    "score": 0.6408235214096643
+                  },
+                  {
+                    "title": "Política de Atendimento",
+                    "section": "Chamados",
+                    "content": "Quando o assistente não consegue resolver a sua solicitação, ele abre um chamado para um atendente com o resumo da conversa. O primeiro retorno de um atendente acontece em até 1 dia útil.",
+                    "score": 0.616117693779437
+                  },
+                  {
+                    "title": "Política de Entrega",
+                    "section": "Prazos de entrega",
+                    "content": "O prazo de entrega é informado no checkout e no e-mail de confirmação do pedido. Ele começa a contar a partir da confirmação do pagamento. Para capitais e regiões metropolitanas do Sul e do Sudeste, o prazo costuma ser de 3 a 7 dias úteis. Para as demais regiões, de 7 a 15 dias úteis.",
+                    "score": 0.6114040084835987
+                  }
+                ]
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1676.8807130865753,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 860.229
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 35.871
+            },
+            {
+              "node": "respond",
+              "ms": 753.216
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_miss_physical_store",
+      "customer_id": "cus_diego",
+      "description": "No policy covers it; the agent must not make one up.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Vocês têm loja física em Curitiba?",
+          "reply": "Não encontrei essa informação nas políticas da loja, então prefiro não te dar uma resposta incerta. Se quiser, posso abrir um chamado para um atendente te responder: é só me pedir.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Vocês têm loja física em Curitiba?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": []
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 775.994055904448,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 712.865
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 29.425
+            },
+            {
+              "node": "respond",
+              "ms": 1.5859999999999999
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "faq_miss_loyalty_program",
+      "customer_id": "cus_ana",
+      "description": "No policy covers it; the agent must not make one up.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Vocês têm programa de pontos ou cashback?",
+          "reply": "Não encontrei essa informação nas políticas da loja, então prefiro não te dar uma resposta incerta. Se quiser, posso abrir um chamado para um atendente te responder: é só me pedir.",
+          "notices": [],
+          "expected_intent": "faq",
+          "intent": "faq",
+          "expected_tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {}
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "search_knowledge_base",
+              "args": {
+                "query": "Vocês têm programa de pontos ou cashback?"
+              },
+              "output": {
+                "kind": "knowledge_base",
+                "chunks": []
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 864.1692800447345,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 770.2750000000001
+            },
+            {
+              "node": "consult_knowledge_base",
+              "ms": 51.894999999999996
+            },
+            {
+              "node": "respond",
+              "ms": 2.9050000000000002
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ],
+  "review_sample": [
+    "faq_support_hours"
+  ]
+}

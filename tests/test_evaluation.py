@@ -10,16 +10,21 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.db import session_factory
 from support_agent.evaluation.dataset import Dataset, load_dataset, parse_dataset
 from support_agent.evaluation.judge import JudgedTurn, Verdict
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, evaluate, percentile
-from support_agent.llm import Classification, Entities, Intent
+from support_agent.evaluation.seeded import reset
+from support_agent.llm import Classification, Confirmation, Entities, Intent
+from support_agent.seed import CUSTOMERS
 
-from .fakes import ScriptedLLM, order_status
+from .fakes import ScriptedLLM, cancel_order, order_status, refund
 
-ORDER_STATUS_DATASET = Path(__file__).parents[1] / "eval" / "datasets" / "order_status.yaml"
+DATASETS = Path(__file__).parents[1] / "eval" / "datasets"
+ORDER_STATUS_DATASET = DATASETS / "order_status.yaml"
 MODELS = ModelIds(
     provider="fake-provider",
     classifier="fake-classifier",
@@ -174,6 +179,94 @@ def test_a_conversation_needs_a_known_outcome_and_turns() -> None:
         )
     with pytest.raises(ValidationError):
         parse_dataset("name: bad\nconversations:\n  - {id: x, customer_id: cus_ana, turns: []}\n")
+    with pytest.raises(ValidationError):  # an Attendant can't reject without a reason
+        parse_dataset(
+            "name: bad\nconversations:\n  - {id: x, customer_id: cus_ana, outcome: resolved,"
+            " turns: [{message: oi, attendant: {decision: reject}}]}\n"
+        )
+
+
+CANCELS_TWICE = """
+name: isolation
+conversations:
+  - id: first
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "[reset] cancela o 2001"
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-2001}}]
+      - message: "[reset] sim"
+        tool_calls: [{name: cancel_order, args: {order_id: ORD-2001}}]
+        facts: ["Pronto, cancelei o pedido ORD-2001"]
+  - id: second
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "[reset] cancela o 2001"
+        tool_calls: [{name: preview_cancellation, args: {order_id: ORD-2001}}]
+      - message: "[reset] sim"
+        tool_calls: [{name: cancel_order, args: {order_id: ORD-2001}}]
+        facts: ["Pronto, cancelei o pedido ORD-2001"]
+"""
+
+
+async def test_each_conversation_starts_from_the_seeded_state(
+    client: AsyncClient, llm: ScriptedLLM, engine: AsyncEngine
+) -> None:
+    llm.on("[reset] cancela o 2001", cancel_order("2001"))
+    llm.on_confirmation("[reset] sim", Confirmation.CONFIRM)
+    sessions = session_factory(engine)
+
+    report = await evaluate(
+        client,
+        parse_dataset(CANCELS_TWICE),
+        FlagsReplies("never"),
+        models=MODELS,
+        started_at=STARTED_AT,
+        reset=lambda: reset(sessions),
+    )
+
+    # The second Conversation cancels again: the first one's Cancellation was undone.
+    assert [result.completed for result in report.conversations] == [True, True]
+
+
+ATTENDANT_DECIDES = """
+name: approvals
+conversations:
+  - id: rejected
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[approval] reembolso do 1001"
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001}}]
+        facts: ["aguardando aprovação"]
+      - message: "[approval] e o reembolso?"
+        attendant: {decision: reject, reason: "Produto sem defeito"}
+        tool_calls: [{name: get_refund_status, args: {order_id: ORD-1001}}]
+        facts: ["Motivo: Produto sem defeito", "recusado"]
+"""
+
+
+async def test_an_attendant_decides_the_pending_approval_before_a_turn(
+    client: AsyncClient, llm: ScriptedLLM, engine: AsyncEngine
+) -> None:
+    llm.on("[approval] reembolso do 1001", refund("1001"))
+    llm.on("[approval] e o reembolso?", refund("1001", status=True))
+    sessions = session_factory(engine)
+
+    report = await evaluate(
+        client,
+        parse_dataset(ATTENDANT_DECIDES),
+        FlagsReplies("never"),
+        models=MODELS,
+        started_at=STARTED_AT,
+        reset=lambda: reset(sessions),
+    )
+
+    [result] = report.conversations
+    # The decision reaches the Customer as a notice before the turn's reply.
+    assert result.turns[1].notices
+    assert result.completed
 
 
 def test_order_status_dataset_covers_every_logistics_scenario() -> None:
@@ -201,3 +294,80 @@ def test_order_status_dataset_covers_every_logistics_scenario() -> None:
     assert len({conversation.id for conversation in dataset.conversations}) == len(
         dataset.conversations
     )
+
+
+def test_every_dataset_scripts_seeded_customers_with_unique_ids() -> None:
+    datasets = [load_dataset(path) for path in sorted(DATASETS.glob("*.yaml"))]
+    conversations = [c for dataset in datasets for c in dataset.conversations]
+
+    ids = [conversation.id for conversation in conversations]
+    assert len(set(ids)) == len(ids)  # unique across datasets: reports are read side by side
+    seeded = {customer["id"] for customer in CUSTOMERS}
+    assert {conversation.customer_id for conversation in conversations} <= seeded
+    tools = {call.name for c in conversations for turn in c.turns for call in turn.tool_calls}
+    assert tools == {
+        "get_order_status",
+        "preview_cancellation",
+        "cancel_order",
+        "create_refund",
+        "get_refund_status",
+        "search_knowledge_base",
+        "create_support_ticket",
+    }
+
+
+class FailsOn(FlagsReplies):
+    """Fake judge that times out on replies mentioning `marker`."""
+
+    async def judge(self, turn: JudgedTurn) -> Verdict:
+        if self.marker in turn.reply:
+            raise TimeoutError("judge timed out")
+        return Verdict(hallucinated=False, unsupported_claims=[])
+
+
+ONE_FAILS = """
+name: failures
+conversations:
+  - id: unknown_customer
+    customer_id: cus_nobody
+    outcome: resolved
+    turns: [{message: "[eval] cadê o 1002?"}]
+  - id: judge_times_out
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "[eval] cadê o 1002?"
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+  - id: still_runs
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "[eval] e o 3003?"
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-3003}}]
+"""
+
+
+async def test_a_conversation_that_errors_fails_alone(
+    client: AsyncClient, llm: ScriptedLLM
+) -> None:
+    script(llm)
+
+    report = await evaluate(
+        client, parse_dataset(ONE_FAILS), FailsOn("ORD-1002"), models=MODELS, started_at=STARTED_AT
+    )
+
+    results = {result.id: result for result in report.conversations}
+    assert results["unknown_customer"].observed_outcome == "failed"
+    assert results["unknown_customer"].error
+    assert not results["unknown_customer"].completed
+    # The reply was scored; only its hallucination check is missing.
+    [turn] = results["judge_times_out"].turns
+    assert turn.verdict is None
+    assert turn.judge_error
+    assert results["judge_times_out"].completed
+    assert results["still_runs"].completed
+    assert report.summary.conversations_failed == 1
+    assert report.summary.judged_turns == 1
+    markdown = render_markdown(report)
+    assert "Failed to run" in markdown
+    assert "Judge failed" in markdown

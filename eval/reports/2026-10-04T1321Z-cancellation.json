@@ -1,0 +1,919 @@
+{
+  "dataset": "cancellation",
+  "started_at": "2026-10-04T13:21:31.710644Z",
+  "models": {
+    "provider": "openai_compatible",
+    "classifier": "arsenal-vps",
+    "responder": "arsenal-vps",
+    "judge": "arsenal-vps"
+  },
+  "git_commit": "25403c5",
+  "summary": {
+    "conversations": 9,
+    "conversations_failed": 0,
+    "turns": 14,
+    "task_completion_rate": 1.0,
+    "tool_call_accuracy": 1.0,
+    "intent_accuracy": 1.0,
+    "hallucination_rate": 0.4166666666666667,
+    "judged_turns": 12,
+    "escalation_rate_appropriate": 0.0,
+    "escalation_rate_avoidable": 0.0,
+    "escalations_missed": 0,
+    "latency_ms": {
+      "turn": {
+        "count": 14,
+        "p50": 868.0179158691317,
+        "p95": 2067.1088414732367
+      },
+      "nodes": {
+        "act": {
+          "count": 9,
+          "p50": 9.831,
+          "p95": 13.971199999999998
+        },
+        "await_confirmation": {
+          "count": 10,
+          "p50": 274.286,
+          "p95": 687.9408
+        },
+        "cancel": {
+          "count": 3,
+          "p50": 20.295,
+          "p95": 24.804899999999996
+        },
+        "classify_intent": {
+          "count": 10,
+          "p50": 876.5535,
+          "p95": 1430.8303999999991
+        },
+        "resolve_context": {
+          "count": 10,
+          "p50": 1.831,
+          "p95": 7.290499999999998
+        },
+        "respond": {
+          "count": 14,
+          "p50": 2.3895,
+          "p95": 263.75509999999974
+        }
+      }
+    }
+  },
+  "conversations": [
+    {
+      "id": "cancel_paid_confirmed",
+      "customer_id": "cus_bruno",
+      "description": "A paid Order not yet Dispatched; confirming issues the full Refund at once.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar o pedido ORD-2001, desisti do teclado.",
+          "reply": "Você quer mesmo cancelar o pedido ORD-2001 inteiro? Como ele já está pago, o reembolso integral de R$ 399,00 será feito automaticamente. Responda \"sim\" para confirmar o cancelamento ou \"não\" para manter o pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-2001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-2001"
+              },
+              "output": {
+                "kind": "cancellation_preview",
+                "order_id": "ORD-2001",
+                "refund_cents": 39900
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "ele já está pago",
+              "reembolso integral de R$ 399,00",
+              "o reembolso será feito automaticamente"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 1053.1602259725332,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 954.548
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.768
+            },
+            {
+              "node": "act",
+              "ms": 14.213999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 2.411
+            },
+            {
+              "node": "await_confirmation",
+              "ms": 2.07
+            }
+          ]
+        },
+        {
+          "message": "Sim, pode cancelar.",
+          "reply": "Pronto, cancelei o pedido ORD-2001. O reembolso de R$ 399,00 foi emitido (reembolso #1).",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-2001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-2001",
+                "expected_refund_cents": 39900
+              },
+              "output": {
+                "kind": "cancellation",
+                "order_id": "ORD-2001",
+                "refund": {
+                  "refund_id": 1,
+                  "amount_cents": 39900,
+                  "status": "issued"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 640.9897631965578,
+          "nodes": [
+            {
+              "node": "await_confirmation",
+              "ms": 578.663
+            },
+            {
+              "node": "cancel",
+              "ms": 25.305999999999997
+            },
+            {
+              "node": "respond",
+              "ms": 1.9009999999999998
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_unpaid_confirmed",
+      "customer_id": "cus_carla",
+      "description": "Awaiting payment, so there is nothing to refund.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Cancela o pedido 3001 pra mim? Não vou pagar o boleto.",
+          "reply": "Você quer mesmo cancelar o pedido ORD-3001 inteiro? Como não há pagamento a devolver, não há valor a reembolsar. Responda \"sim\" para confirmar o cancelamento ou \"não\" para manter o pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-3001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "3001"
+              },
+              "output": {
+                "kind": "cancellation_preview",
+                "order_id": "ORD-3001",
+                "refund_cents": 0
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 1880.1818038336933,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 1820.516
+            },
+            {
+              "node": "resolve_context",
+              "ms": 2.075
+            },
+            {
+              "node": "act",
+              "ms": 11.85
+            },
+            {
+              "node": "respond",
+              "ms": 2.005
+            },
+            {
+              "node": "await_confirmation",
+              "ms": 1.254
+            }
+          ]
+        },
+        {
+          "message": "sim",
+          "reply": "Pronto, cancelei o pedido ORD-3001.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-3001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-3001",
+                "expected_refund_cents": 0
+              },
+              "output": {
+                "kind": "cancellation",
+                "order_id": "ORD-3001",
+                "refund": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 682.3210818693042,
+          "nodes": [
+            {
+              "node": "await_confirmation",
+              "ms": 630.38
+            },
+            {
+              "node": "cancel",
+              "ms": 19.345000000000002
+            },
+            {
+              "node": "respond",
+              "ms": 1.944
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_denied",
+      "customer_id": "cus_ana",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar o pedido ORD-1003",
+          "reply": "Você quer mesmo cancelar o pedido ORD-1003 inteiro? Como ele já está pago, o reembolso integral de R$ 119,80 será feito automaticamente. Responda \"sim\" para confirmar o cancelamento ou \"não\" para manter o pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-1003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-1003"
+              },
+              "output": {
+                "kind": "cancellation_preview",
+                "order_id": "ORD-1003",
+                "refund_cents": 11980
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "Como ele já está pago, o reembolso integral de R$ 119,80 será feito automaticamente"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 910.2113391272724,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 845.977
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.8940000000000001
+            },
+            {
+              "node": "act",
+              "ms": 12.531
+            },
+            {
+              "node": "respond",
+              "ms": 2.368
+            },
+            {
+              "node": "await_confirmation",
+              "ms": 1.212
+            }
+          ]
+        },
+        {
+          "message": "Não, pensando melhor vou manter.",
+          "reply": "Tudo bem, não cancelei nada: o pedido ORD-1003 continua ativo.",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "cancel_order",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 617.4824507907033,
+          "nodes": [
+            {
+              "node": "await_confirmation",
+              "ms": 566.875
+            },
+            {
+              "node": "respond",
+              "ms": 9.723
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_dropped_by_other_message",
+      "customer_id": "cus_diego",
+      "description": "The answer to the confirmation is a new question: the Cancellation is dropped and the message is handled on its own, about the same Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar o pedido 4001",
+          "reply": "Você quer mesmo cancelar o pedido ORD-4001 inteiro? Como ele já está pago, o reembolso integral de R$ 89,90 será feito automaticamente. Responda \"sim\" para confirmar o cancelamento ou \"não\" para manter o pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-4001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "4001"
+              },
+              "output": {
+                "kind": "cancellation_preview",
+                "order_id": "ORD-4001",
+                "refund_cents": 8990
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "Ele já está pago",
+              "O reembolso será feito automaticamente",
+              "O pedido ORD-4001 será cancelado inteiro (integral)",
+              "O reembolso é integral de R$ 89,90"
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 976.9823397509754,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 919.372
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.623
+            },
+            {
+              "node": "act",
+              "ms": 9.831
+            },
+            {
+              "node": "respond",
+              "ms": 2.0
+            },
+            {
+              "node": "await_confirmation",
+              "ms": 1.031
+            }
+          ]
+        },
+        {
+          "message": "Hmm, antes me diz: quando ele chega?",
+          "reply": "Como você não confirmou, não cancelei o pedido ORD-4001.\n\nA previsão de entrega do pedido ORD-4001 é 06/09/2026.",
+          "notices": [],
+          "expected_intent": "order_status",
+          "intent": "order_status",
+          "expected_tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "ORD-4001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "get_order_status",
+              "args": {
+                "order_id": "4001"
+              },
+              "output": {
+                "kind": "order_status",
+                "order_id": "ORD-4001",
+                "status": "processing",
+                "placed_at": "2026-08-30T12:00:00Z",
+                "promised_delivery_date": "2026-09-06",
+                "delivered_at": null,
+                "days_late": 0,
+                "shipment": null
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 2414.2590542323887,
+          "nodes": [
+            {
+              "node": "await_confirmation",
+              "ms": 735.0360000000001
+            },
+            {
+              "node": "classify_intent",
+              "ms": 908.366
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.496
+            },
+            {
+              "node": "act",
+              "ms": 7.204999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 735.529
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_single_recent_order",
+      "customer_id": "cus_diego",
+      "description": "No order number, but the Customer has a single recent Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar minha compra",
+          "reply": "Encontrei um pedido recente seu, o ORD-4001.\nVocê quer mesmo cancelar o pedido ORD-4001 inteiro? Como ele já está pago, o reembolso integral de R$ 89,90 será feito automaticamente. Responda \"sim\" para confirmar o cancelamento ou \"não\" para manter o pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-4001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-4001"
+              },
+              "output": {
+                "kind": "cancellation_preview",
+                "order_id": "ORD-4001",
+                "refund_cents": 8990
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "Como ele já está pago, o reembolso integral de R$ 89,90 será feito automaticamente."
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 824.2053650319576,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 764.619
+            },
+            {
+              "node": "resolve_context",
+              "ms": 6.471
+            },
+            {
+              "node": "act",
+              "ms": 8.713000000000001
+            },
+            {
+              "node": "respond",
+              "ms": 2.826
+            },
+            {
+              "node": "await_confirmation",
+              "ms": 1.4289999999999998
+            }
+          ]
+        },
+        {
+          "message": "Isso, confirmo o cancelamento",
+          "reply": "Pronto, cancelei o pedido ORD-4001. O reembolso de R$ 89,90 foi emitido (reembolso #2).",
+          "notices": [],
+          "expected_intent": null,
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-4001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "cancel_order",
+              "args": {
+                "order_id": "ORD-4001",
+                "expected_refund_cents": 8990
+              },
+              "output": {
+                "kind": "cancellation",
+                "order_id": "ORD-4001",
+                "refund": {
+                  "refund_id": 2,
+                  "amount_cents": 8990,
+                  "status": "issued"
+                }
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 599.3337230756879,
+          "nodes": [
+            {
+              "node": "await_confirmation",
+              "ms": 546.5020000000001
+            },
+            {
+              "node": "cancel",
+              "ms": 20.295
+            },
+            {
+              "node": "respond",
+              "ms": 1.659
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_which_order",
+      "customer_id": "cus_ana",
+      "description": "No order number and several recent Orders; the agent lists them and asks.",
+      "expected_outcome": "clarification",
+      "observed_outcome": "clarification",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar um pedido",
+          "reply": "Encontrei estes pedidos recentes seus:\n- ORD-1003, feito em 31/08/2026: em separação\n- ORD-1002, feito em 26/08/2026: enviado\n- ORD-1004, feito em 20/08/2026: enviado\n- ORD-1001, feito em 12/08/2026: entregue\nQual deles você quer consultar? Se for outro, me diga o número do pedido.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [],
+          "tool_calls": [],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": null,
+          "judge_error": null,
+          "latency_ms": 844.4105028174818,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 765.988
+            },
+            {
+              "node": "resolve_context",
+              "ms": 7.960999999999999
+            },
+            {
+              "node": "respond",
+              "ms": 3.326
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_already_dispatched",
+      "customer_id": "cus_ana",
+      "description": "Already with the carrier; the agent offers refusing the delivery or a return.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar o ORD-1002, comprei errado",
+          "reply": "O pedido ORD-1002 já foi enviado à transportadora, então não pode mais ser cancelado. Você pode recusar a entrega quando ela chegar ou, depois de receber, solicitar a devolução (Política de Cancelamento; Política de Devolução e Direito de Arrependimento).",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-1002"
+              },
+              "output": {
+                "kind": "error",
+                "code": "already_dispatched",
+                "order_id": "ORD-1002"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [
+              "Você pode recusar a entrega quando ela chegar ou, depois de receber, solicitar a devolução (Política de Cancelamento; Política de Devolução e Direito de Arrependimento)."
+            ],
+            "hallucinated": true
+          },
+          "judge_error": null,
+          "latency_ms": 891.6253289207816,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 828.587
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.967
+            },
+            {
+              "node": "act",
+              "ms": 9.599
+            },
+            {
+              "node": "respond",
+              "ms": 2.319
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_already_cancelled",
+      "customer_id": "cus_bruno",
+      "description": null,
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Cancela o pedido do mouse, o ORD-2003",
+          "reply": "O pedido ORD-2003 já está cancelado, não há mais nada a fazer nele.",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-2003"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-2003"
+              },
+              "output": {
+                "kind": "error",
+                "code": "already_cancelled",
+                "order_id": "ORD-2003"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 962.3376298695803,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 907.13
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.539
+            },
+            {
+              "node": "act",
+              "ms": 13.607
+            },
+            {
+              "node": "respond",
+              "ms": 2.646
+            }
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "cancel_someone_elses_order",
+      "customer_id": "cus_ana",
+      "description": "ORD-2001 is Bruno's; Ana gets the same answer as for a missing Order.",
+      "expected_outcome": "resolved",
+      "observed_outcome": "resolved",
+      "escalation": null,
+      "completed": true,
+      "turns": [
+        {
+          "message": "Quero cancelar o pedido ORD-2001",
+          "reply": "Não encontrei o pedido ORD-2001 entre os seus pedidos. Confere o número e me manda de novo?",
+          "notices": [],
+          "expected_intent": "cancel_order",
+          "intent": "cancel_order",
+          "expected_tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-2001"
+              }
+            }
+          ],
+          "tool_calls": [
+            {
+              "name": "preview_cancellation",
+              "args": {
+                "order_id": "ORD-2001"
+              },
+              "output": {
+                "kind": "error",
+                "code": "not_owned",
+                "order_id": "ORD-2001"
+              }
+            }
+          ],
+          "tool_calls_ok": true,
+          "missing_facts": [],
+          "verdict": {
+            "unsupported_claims": [],
+            "hallucinated": false
+          },
+          "judge_error": null,
+          "latency_ms": 773.3047609217465,
+          "nodes": [
+            {
+              "node": "classify_intent",
+              "ms": 722.447
+            },
+            {
+              "node": "resolve_context",
+              "ms": 1.6139999999999999
+            },
+            {
+              "node": "act",
+              "ms": 8.177
+            },
+            {
+              "node": "respond",
+              "ms": 5.093999999999999
+            }
+          ]
+        }
+      ],
+      "error": null
+    }
+  ],
+  "review_sample": [
+    "cancel_already_dispatched"
+  ]
+}

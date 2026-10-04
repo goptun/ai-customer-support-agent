@@ -11,7 +11,7 @@ are judged on the turns whose reply rests on tool outputs.
 import math
 import random
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -41,7 +41,8 @@ TICKET_TOOL = create_support_ticket.__name__
 # Nodes that act on the Customer's answer to a Cancellation question without a new tool call.
 CONFIRMATION_NODES = frozenset({"await_confirmation", "cancel"})
 
-ObservedOutcome = Literal["resolved", "escalated", "clarification"]
+# failed: the Conversation could not be run to the end (e.g. the LLM endpoint timed out).
+ObservedOutcome = Literal["resolved", "escalated", "clarification", "failed"]
 
 
 class ModelIds(BaseModel):
@@ -54,13 +55,15 @@ class ModelIds(BaseModel):
 class TurnResult(BaseModel):
     message: str
     reply: str
+    notices: list[str] = []
     expected_intent: Intent | None
     intent: str
     expected_tool_calls: list[ExpectedToolCall]
     tool_calls: list[ToolCall]  # retries collapsed
     tool_calls_ok: bool
     missing_facts: list[str]
-    verdict: Verdict | None  # None: no tool output to judge against
+    verdict: Verdict | None  # None: no tool output to judge against, or the judge failed
+    judge_error: str | None = None
     latency_ms: float
     nodes: list[NodeTiming]
 
@@ -78,6 +81,7 @@ class ConversationResult(BaseModel):
     escalation: Literal["appropriate", "avoidable"] | None
     completed: bool
     turns: list[TurnResult]
+    error: str | None = None  # why it failed
 
 
 class LatencyStats(BaseModel):
@@ -93,6 +97,7 @@ class Latency(BaseModel):
 
 class Summary(BaseModel):
     conversations: int
+    conversations_failed: int  # could not be run to the end; count as not completed
     turns: int
     task_completion_rate: float
     tool_call_accuracy: float  # turns whose tool calls match the gold ones
@@ -124,11 +129,22 @@ async def evaluate(
     started_at: datetime,
     git_commit: str | None = None,
     seed: int = 0,
+    reset: Callable[[], Awaitable[None]] | None = None,
 ) -> Report:
-    """Run every Conversation through the app (one after another), then judge and score."""
+    """Run every Conversation through the app (one after another), then judge and score.
+
+    `reset`, called before each Conversation, puts the data back as seeded: a Cancellation or
+    Refund in one Conversation must not change what the next one finds.
+    """
     results = []
     for conversation in dataset.conversations:
-        run = await run_conversation(client, conversation)
+        if reset is not None:
+            await reset()
+        try:
+            run = await run_conversation(client, conversation)
+        except Exception as error:  # one broken Conversation must not lose the whole run
+            results.append(_failed(conversation, error))
+            continue
         results.append(await _score(conversation, run, judge))
     ids = [result.id for result in results]
     sampled = set(random.Random(seed).sample(ids, max(1, round(len(ids) * REVIEW_FRACTION))))
@@ -140,6 +156,20 @@ async def evaluate(
         summary=_summarize(results),
         conversations=results,
         review_sample=[id_ for id_ in ids if id_ in sampled],
+    )
+
+
+def _failed(conversation: ScriptedConversation, error: Exception) -> ConversationResult:
+    return ConversationResult(
+        id=conversation.id,
+        customer_id=conversation.customer_id,
+        description=conversation.description,
+        expected_outcome=conversation.outcome,
+        observed_outcome="failed",
+        escalation=None,
+        completed=False,
+        turns=[],
+        error=f"{type(error).__name__}: {error}",
     )
 
 
@@ -169,19 +199,23 @@ async def _score(
 
 async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -> TurnResult:
     calls = _collapse_retries(observed.tool_calls)
-    verdict = None
+    verdict, judge_error = None, None
     if calls:
-        verdict = await judge.judge(
-            JudgedTurn(
-                message=observed.message,
-                reply=observed.reply,
-                tool_outputs=tool_outputs(calls),
+        try:
+            verdict = await judge.judge(
+                JudgedTurn(
+                    message=observed.message,
+                    reply=observed.reply,
+                    tool_outputs=tool_outputs(calls),
+                )
             )
-        )
-    reply = observed.reply.casefold()
+        except Exception as error:  # the reply is still scored, just not judged
+            judge_error = f"{type(error).__name__}: {error}"
+    shown = "\n".join([*observed.notices, observed.reply]).casefold()
     return TurnResult(
         message=observed.message,
         reply=observed.reply,
+        notices=observed.notices,
         expected_intent=expected.intent,
         intent=observed.intent,
         expected_tool_calls=expected.tool_calls,
@@ -190,9 +224,10 @@ async def _score_turn(expected: CustomerTurn, observed: TurnRun, judge: Judge) -
         missing_facts=[
             " | ".join(options)
             for options in ([fact] if isinstance(fact, str) else fact for fact in expected.facts)
-            if not any(option.casefold() in reply for option in options)
+            if not any(option.casefold() in shown for option in options)
         ],
         verdict=verdict,
+        judge_error=judge_error,
         latency_ms=observed.latency_ms,
         nodes=observed.nodes,
     )
@@ -258,6 +293,7 @@ def _summarize(results: Sequence[ConversationResult]) -> Summary:
             node_ms[node.node].append(node.ms)
     return Summary(
         conversations=len(results),
+        conversations_failed=sum(result.observed_outcome == "failed" for result in results),
         turns=len(turns),
         task_completion_rate=_rate([result.completed for result in results]) or 0.0,
         tool_call_accuracy=_rate([turn.tool_calls_ok for turn in turns]) or 0.0,

@@ -7,7 +7,8 @@ LLM_PROVIDER=openai_compatible with LLM_BASE_URL (ADR-0004); and Docker: it star
 Postgres and Redis containers, unless EVAL_DATABASE_URL and EVAL_REDIS_URL point at
 disposable ones (the run seeds them and writes Conversations and Tickets). The app runs in
 process with the real models, the real embedding model and the logistics mock, on the seed's
-clock. Writes a JSON and a Markdown report per dataset into eval/reports/.
+clock, and each Conversation starts from the seeded data. Writes a JSON and a Markdown report
+per dataset into eval/reports/.
 """
 
 import argparse
@@ -33,6 +34,7 @@ from support_agent.evaluation.dataset import Dataset, load_dataset
 from support_agent.evaluation.judge import AnthropicJudge, OpenAICompatibleJudge, build_judge
 from support_agent.evaluation.markdown import render_markdown
 from support_agent.evaluation.report import ModelIds, Report, evaluate
+from support_agent.evaluation.seeded import reset
 from support_agent.knowledge import FastEmbedEmbedder, index_policies, load_policies
 from support_agent.llm import LLM, build_llm
 from support_agent.logistics_mock import create_app as create_logistics_mock
@@ -111,45 +113,45 @@ async def _evaluate(
         sessions = session_factory(engine)
         await seed(sessions)
         await index_policies(sessions, embedder, load_policies())
+        app = create_app(
+            settings,
+            llm=llm,
+            embedder=embedder,
+            logistics_transport=ASGITransport(app=create_logistics_mock()),
+            today=ANCHOR.date,
+        )
+        models = ModelIds(
+            provider=settings.llm_provider,
+            classifier=settings.classifier_model,
+            responder=settings.responder_model,
+            judge=judge.model,
+        )
+        async with (
+            LifespanManager(app) as manager,
+            AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://eval") as client,
+        ):
+            for dataset in datasets:
+                print(f"Running {dataset.name}: {len(dataset.conversations)} Conversations...")
+                report = await evaluate(
+                    client,
+                    dataset,
+                    judge,
+                    models=models,
+                    started_at=datetime.now(UTC),
+                    git_commit=_git_commit(),
+                    seed=sample_seed,
+                    reset=lambda: reset(sessions),
+                )
+                for path in write_report(report, out):
+                    print(f"  wrote {path}")
+                summary = report.summary
+                print(
+                    f"  task completion {summary.task_completion_rate:.0%}, "
+                    f"tool-call accuracy {summary.tool_call_accuracy:.0%}, "
+                    f"turn p95 {summary.latency_ms.turn.p95:.0f} ms"
+                )
     finally:
         await engine.dispose()
-
-    app = create_app(
-        settings,
-        llm=llm,
-        embedder=embedder,
-        logistics_transport=ASGITransport(app=create_logistics_mock()),
-        today=ANCHOR.date,
-    )
-    models = ModelIds(
-        provider=settings.llm_provider,
-        classifier=settings.classifier_model,
-        responder=settings.responder_model,
-        judge=judge.model,
-    )
-    async with (
-        LifespanManager(app) as manager,
-        AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://eval") as client,
-    ):
-        for dataset in datasets:
-            print(f"Running {dataset.name}: {len(dataset.conversations)} Conversations...")
-            report = await evaluate(
-                client,
-                dataset,
-                judge,
-                models=models,
-                started_at=datetime.now(UTC),
-                git_commit=_git_commit(),
-                seed=sample_seed,
-            )
-            for path in write_report(report, out):
-                print(f"  wrote {path}")
-            summary = report.summary
-            print(
-                f"  task completion {summary.task_completion_rate:.0%}, "
-                f"tool-call accuracy {summary.tool_call_accuracy:.0%}, "
-                f"turn p95 {summary.latency_ms.turn.p95:.0f} ms"
-            )
 
 
 def write_report(report: Report, directory: Path) -> tuple[Path, Path]:
@@ -168,7 +170,11 @@ def _git_commit() -> str | None:
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
         ).stdout.strip()
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+            # Reports written earlier in the same run don't make the code dirty.
+            ["git", "status", "--porcelain", "--", ".", f":!{REPORTS}"],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None

@@ -1,0 +1,196 @@
+# Refunds: every Refund Policy branch (eligible on each ground, each refusal), the amount
+# (default maximum, lower, capped), the Attendant's approval and the status of a Refund.
+# Format notes in order_status.yaml; Refund replies are deterministic, so their facts are exact
+# phrases. `attendant` decides the Customer's pending Approval Requests before that turn; the
+# decision reaches the Customer as a notice. Each Conversation starts from the seeded data.
+name: refund
+conversations:
+  - id: refund_delivered_recently
+    customer_id: cus_ana
+    outcome: resolved
+    description: Delivered 13 days ago; the default amount is the maximum.
+    turns:
+      - message: "Quero reembolso do pedido ORD-1001, o fone não funcionou direito."
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001, amount_cents: null}}]
+        facts: ["R$ 249,90", "aguardando aprovação"]
+
+  - id: refund_lower_amount
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "Quero um reembolso parcial de R$ 100 do pedido 1001, veio sem o cabo."
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001, amount_cents: 10000}}]
+        facts: ["R$ 100,00", "R$ 249,90", "aguardando aprovação"]
+
+  - id: refund_capped
+    customer_id: cus_ana
+    outcome: resolved
+    description: Asks for more than was paid; the amount is capped and the limit explained.
+    turns:
+      - message: "Me reembolsa R$ 500,00 do pedido ORD-1001"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001, amount_cents: 50000}}]
+        facts: ["R$ 500,00", "R$ 249,90", "máximo"]
+
+  - id: refund_shipment_lost
+    customer_id: cus_ana
+    outcome: resolved
+    turns:
+      - message: "A transportadora perdeu minha cafeteira, pedido 1004. Quero meu dinheiro de volta."
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1004}}]
+        facts: ["R$ 329,00", "aguardando aprovação"]
+
+  - id: refund_late
+    customer_id: cus_bruno
+    outcome: resolved
+    description: 15 days past the promised date, beyond the 10 the policy allows.
+    turns:
+      - message: "O monitor do pedido ORD-2002 está atrasado há semanas, quero o reembolso."
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-2002}}]
+        facts: ["R$ 1.499,00", "aguardando aprovação"]
+
+  - id: refund_not_late_enough
+    customer_id: cus_ana
+    outcome: resolved
+    description: In transit and within the promised date; the agent offers a Ticket.
+    turns:
+      - message: "Quero reembolso do ORD-1002"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1002}}]
+        facts: ["10 dias", "Política de Reembolso", "chamado"]
+
+  - id: refund_returned_not_late_enough
+    customer_id: cus_bruno
+    outcome: resolved
+    description: Returned to sender only 5 days past the promised date; not eligible yet.
+    turns:
+      - message: "A cadeira do pedido 2004 voltou pro remetente. Quero reembolso."
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-2004}}]
+        facts: ["10 dias", "chamado"]
+
+  - id: refund_delivery_window_expired
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "Quero devolver a luminária e ter reembolso, pedido ORD-3002"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-3002}}]
+        facts: ["30 dias", "Política de Reembolso", "chamado"]
+
+  - id: refund_not_dispatched
+    customer_id: cus_ana
+    outcome: resolved
+    description: Not Dispatched yet; a Cancellation is the way to get the money back.
+    turns:
+      - message: "Quero o reembolso do pedido 1003"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1003}}]
+        facts: ["ainda não foi enviado", "cancelá-lo"]
+
+  - id: refund_order_cancelled
+    customer_id: cus_bruno
+    outcome: resolved
+    turns:
+      - message: "Quero reembolso do pedido ORD-2003"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-2003}}]
+        facts: ["está cancelado", "Política de Cancelamento"]
+
+  - id: refund_carrier_unavailable
+    customer_id: cus_carla
+    outcome: resolved
+    description: Only the carrier can tell whether it was lost, and it times out.
+    turns:
+      - message: "Quero reembolso do pedido ORD-3003"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-3003}}]
+        facts: ["Não consegui consultar"]
+
+  - id: refund_someone_elses_order
+    customer_id: cus_carla
+    outcome: resolved
+    description: ORD-1001 is Ana's; Carla gets the same answer as for a missing Order.
+    turns:
+      - message: "Quero reembolso do pedido ORD-1001"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001}}]
+        facts: ["Não encontrei o pedido ORD-1001"]
+
+  - id: refund_already_pending
+    customer_id: cus_bruno
+    outcome: resolved
+    description: Asking again while the first Refund awaits approval opens no second one.
+    turns:
+      - message: "Quero reembolso do ORD-2002, está muito atrasado"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-2002}}]
+        facts: ["aguardando aprovação"]
+      - message: "Pede de novo o reembolso do ORD-2002, por favor"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-2002}}]
+        facts: ["já tem um reembolso", "não abri outro"]
+
+  - id: refund_approved
+    customer_id: cus_ana
+    outcome: resolved
+    description: >-
+      The Customer keeps chatting while the Refund awaits approval; once an Attendant
+      approves it, the next turn shows the decision and the status.
+    turns:
+      - message: "Quero reembolso do pedido ORD-1004, foi extraviado"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1004}}]
+        facts: ["aguardando aprovação"]
+      - message: "Enquanto isso, onde está o ORD-1002?"
+        intent: order_status
+        tool_calls: [{name: get_order_status, args: {order_id: ORD-1002}}]
+        facts: ["03/09/2026"]
+      - message: "E o meu reembolso do ORD-1004, como está?"
+        attendant: {decision: approve}
+        intent: refund
+        tool_calls: [{name: get_refund_status, args: {order_id: ORD-1004}}]
+        facts: ["foi aprovado por um atendente", "emitido"]
+
+  - id: refund_rejected
+    customer_id: cus_bruno
+    outcome: resolved
+    description: The Attendant's reason for rejecting reaches the Customer, with a Ticket offered.
+    turns:
+      - message: "Quero reembolso do monitor, pedido ORD-2002"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-2002}}]
+        facts: ["aguardando aprovação"]
+      - message: "Qual o status do meu reembolso?"
+        attendant: {decision: reject, reason: "A transportadora confirmou a entrega para amanhã"}
+        intent: refund
+        tool_calls: [{name: get_refund_status}]
+        facts: ["Motivo: A transportadora confirmou a entrega para amanhã", "recusado"]
+
+  - id: refund_nothing_left
+    customer_id: cus_ana
+    outcome: resolved
+    description: After the full Refund is approved, nothing is left to refund on the Order.
+    turns:
+      - message: "Quero reembolso do pedido ORD-1001"
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001}}]
+        facts: ["R$ 249,90"]
+      - message: "Quero mais um reembolso do ORD-1001"
+        attendant: {decision: approve}
+        intent: refund
+        tool_calls: [{name: create_refund, args: {order_id: ORD-1001}}]
+        facts: ["foi aprovado por um atendente", "já somam o valor pago"]
+
+  - id: refund_status_none
+    customer_id: cus_carla
+    outcome: resolved
+    turns:
+      - message: "Qual o status do meu reembolso?"
+        intent: refund
+        tool_calls: [{name: get_refund_status}]
+        facts: ["Não encontrei reembolsos"]
