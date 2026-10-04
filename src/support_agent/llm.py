@@ -173,6 +173,9 @@ class AnthropicLLM:
             messages=_to_params(history),
             output_config={"effort": "low"},
         )
+        # Cut mid-sentence, a reply may still look grounded while saying nothing.
+        if response.stop_reason == "max_tokens":
+            return ""
         return "".join(block.text for block in response.content if block.type == "text")
 
 
@@ -222,18 +225,30 @@ class OpenAICompatibleLLM:
         return await complete(self._client, self._responder_model, system, history)
 
 
+# Room for the reasoning too: left unset, the routed provider applies its own default, and
+# Cloudflare's 256 tokens on gpt-oss-120b cut most replies short (#36).
+MAX_TOKENS = 2048
+
+
 async def complete(
     client: AsyncOpenAI, model: str, system: str, history: Sequence[ConversationMessage]
 ) -> str:
-    """The reply text of one chat completion, without any leading reasoning block."""
+    """The reply text of one chat completion, without any leading reasoning block.
+
+    A reply cut by the token limit is no reply: it may stop mid-sentence and still look fine.
+    """
     messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": system}]
     for m in history:
         if m.role == "user":
             messages.append({"role": "user", "content": m.content})
         else:
             messages.append({"role": "assistant", "content": m.content})
-    response = await client.chat.completions.create(model=model, messages=messages)
-    content = response.choices[0].message.content if response.choices else None
+    response = await client.chat.completions.create(
+        model=model, messages=messages, max_tokens=MAX_TOKENS
+    )
+    if not response.choices or response.choices[0].finish_reason == "length":
+        return ""
+    content = response.choices[0].message.content
     return _without_reasoning(content or "").strip()
 
 
