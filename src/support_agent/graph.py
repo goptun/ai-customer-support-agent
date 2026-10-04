@@ -37,6 +37,7 @@ from support_agent.replies import (
     KNOWLEDGE_NOT_FOUND,
     TICKET_FAILED,
     cite_sources,
+    is_complete,
     is_grounded,
     render_cancellation_dropped,
     render_cancellation_kept,
@@ -478,7 +479,8 @@ def build_graph(
             return render_error(result)
         facts = render_order_status(result)
         reply = await deps.llm.respond(_history(state, deps.history_window), facts.text)
-        return reply if reply.strip() and is_grounded(reply, facts) else facts.text
+        usable = is_grounded(reply, facts) and is_complete(reply, facts)
+        return reply if reply.strip() and usable else facts.text
 
     async def _knowledge_reply(state: ConversationState) -> str:
         result = _knowledge_result.validate_python(state["tool_result"])
