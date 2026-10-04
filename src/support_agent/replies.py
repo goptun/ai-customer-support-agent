@@ -347,6 +347,7 @@ _WONT_ARRIVE = {
     ShipmentStatus.LOST: frozenset({"extraviad", "extravio"}),
     ShipmentStatus.RETURNED: frozenset({"devolvid", "devolução"}),
 }
+_CARRIER = frozenset({"transportadora"})
 
 
 def _required_facts(result: OrderStatusResult) -> frozenset[frozenset[str]]:
@@ -363,6 +364,9 @@ def _required_facts(result: OrderStatusResult) -> frozenset[frozenset[str]]:
             # The promised date no longer answers anything; what happened to it does.
             required.add(_WONT_ARRIVE[tracking.status])
             return frozenset(required)
+        if shipment.tracking_error is not None:
+            # Without it the Customer can't tell the failure is the carrier's, not ours.
+            required.add(_CARRIER)
     if result.promised_delivery_date is not None:
         required.add(frozenset({_format_date(result.promised_delivery_date)}))
     return frozenset(required)
