@@ -182,9 +182,9 @@ Each Customer message is one trace named `conversation_turn` (filter by `convers
 
 ### Abuse protection
 
-`POST /chat` answers `429` with a pt-BR `detail` and `Retry-After` when a Conversation sends more than `CHAT_TURNS_PER_WINDOW` (10) turns in `CHAT_RATE_WINDOW_SECONDS` (60), or when the LLM calls of the day (UTC, all Customers) reach `LLM_CALLS_PER_DAY` (2000); the last turn of the day may go a few calls over rather than stop halfway. Counters live in Redis.
+`POST /chat` answers `429` with a pt-BR `detail` and `Retry-After` when a Conversation sends more than `CONVERSATION_TURNS_PER_WINDOW` (10) turns in `CONVERSATION_RATE_WINDOW_SECONDS` (60), or when the LLM calls of the day (UTC, all Customers) reach `LLM_CALLS_PER_DAY` (2000); the last turn of the day may go a few calls over rather than stop halfway. Counters live in Redis.
 
-An optional `Idempotency-Key` header makes a retry safe: the same key from the same Customer returns the original turn for `IDEMPOTENCY_TTL_SECONDS` (24 h) without running it again or counting it; the same key with a different body is `422`, and while the first request is still running, `409`.
+An optional `Idempotency-Key` header makes a retry safe: the same key from the same Customer returns the original turn for `IDEMPOTENCY_TTL_SECONDS` (24 h) without running it again or counting it; the same key with a different body is `422`, and while the first request is still running (up to `IDEMPOTENCY_IN_FLIGHT_TTL_SECONDS`), `409`. A request that fails (including a `429`) frees its key for the retry.
 
 ## Deploy
 
@@ -196,7 +196,7 @@ Public at `https://support.matheusramos.dev`, on the VPS next to the other servi
 4. App: `.env` from `.env.example` (strong `JWT_SECRET` and `POSTGRES_PASSWORD`, LLM provider), then `docker compose up -d --build` in this directory (Compose project `support`; touches no other project).
 5. Smoke test: the `curl` from [Run locally](#run-locally) against `https://support.matheusramos.dev`.
 
-The vhost limits requests per client IP (`limit_req`: `/chat` 12/min with a burst of 6, the rest 5/s), answering `429`. Behind Cloudflare the client is `CF-Connecting-IP`, used as the `limit_req` key and passed on as `X-Real-IP`. It is not set with `real_ip_header`: realip would rewrite the address before nginx checks `conf.d/00-cloudflare-only.conf` (the allowlist that lets only Cloudflare in), and every real client would be denied. The allowlist is also why the header can't be forged.
+The vhost limits requests per client IP (`limit_req`: `/chat` 12/min with a burst of 6, the rest 5/s), answering `429`. Behind Cloudflare the client is `CF-Connecting-IP`, used as the `limit_req` key and passed on as `X-Real-IP`. It is not set with `real_ip_header`: realip would rewrite the address before nginx checks `conf.d/00-cloudflare-only.conf` (the allowlist that lets only Cloudflare in), and every real client would be denied. Cloudflare overwrites the header, and the allowlist leaves only private/Tailscale networks able to forge it.
 
 ## Evaluation
 

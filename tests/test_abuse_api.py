@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -9,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from support_agent.config import Settings
-from support_agent.seed import ANCHOR
+from support_agent.limits import Idempotency, IdempotencyKeyInFlight, LLMBudget
 
 from .conftest import app_client
 from .fakes import ScriptedLLM
@@ -26,7 +27,7 @@ async def redis(settings: Settings) -> AsyncIterator[Redis]:
 async def test_a_conversation_over_its_rate_limit_gets_a_friendly_429(
     settings: Settings, engine: AsyncEngine, llm: ScriptedLLM
 ) -> None:
-    limited = settings.model_copy(update={"chat_turns_per_window": 2})
+    limited = settings.model_copy(update={"conversation_turns_per_window": 2})
     async with app_client(limited, llm) as client:
         headers = await token_for(client, ANA)
         conversation_id = str((await chat(client, headers, "um"))["conversation_id"])
@@ -39,7 +40,7 @@ async def test_a_conversation_over_its_rate_limit_gets_a_friendly_429(
 
     assert over.status_code == 429
     assert "Você enviou muitas mensagens" in over.json()["detail"]
-    assert 0 < int(over.headers["Retry-After"]) <= limited.chat_rate_window_seconds
+    assert 0 < int(over.headers["Retry-After"]) <= limited.conversation_rate_window_seconds
     assert other_conversation["reply"]
     contents = [content for _, content in await stored_messages(engine, conversation_id)]
     assert "três" not in contents
@@ -48,7 +49,8 @@ async def test_a_conversation_over_its_rate_limit_gets_a_friendly_429(
 async def test_over_the_daily_llm_cap_no_turn_runs_until_the_next_day(
     settings: Settings, engine: AsyncEngine, llm: ScriptedLLM, redis: Redis
 ) -> None:
-    await redis.delete(f"llm_calls:{ANCHOR.date().isoformat()}")
+    key = LLMBudget.key(datetime.now(UTC).date())
+    await redis.delete(key)
     capped = settings.model_copy(update={"llm_calls_per_day": 1})
     async with app_client(capped, llm) as client:
         headers = await token_for(client, ANA)
@@ -59,8 +61,8 @@ async def test_over_the_daily_llm_cap_no_turn_runs_until_the_next_day(
     assert over.status_code == 429
     assert "limite diário" in over.json()["detail"]
     assert 0 < int(over.headers["Retry-After"]) <= 24 * 3600
-    assert int(await redis.get(f"llm_calls:{ANCHOR.date().isoformat()}") or 0) >= 1
-    assert await redis.ttl(f"llm_calls:{ANCHOR.date().isoformat()}") > 0
+    assert int(await redis.get(key) or 0) >= 1
+    assert await redis.ttl(key) > 0
 
 
 async def test_a_retry_with_the_same_idempotency_key_returns_the_original_turn(
@@ -105,7 +107,7 @@ async def test_idempotency_keys_are_scoped_to_the_customer(client: AsyncClient) 
 async def test_a_replayed_turn_does_not_count_against_the_rate_limit(
     settings: Settings, engine: AsyncEngine, llm: ScriptedLLM
 ) -> None:
-    limited = settings.model_copy(update={"chat_turns_per_window": 1})
+    limited = settings.model_copy(update={"conversation_turns_per_window": 1})
     async with app_client(limited, llm) as client:
         headers = {**await token_for(client, ANA), "Idempotency-Key": str(uuid.uuid4())}
         first = await client.post("/chat", json={"message": "oi"}, headers=headers)
@@ -115,3 +117,32 @@ async def test_a_replayed_turn_does_not_count_against_the_rate_limit(
 
     assert first.status_code == 200
     assert [r.status_code for r in retries] == [200, 200, 200]
+
+
+async def test_a_refused_request_frees_its_idempotency_key_for_the_retry(
+    settings: Settings, engine: AsyncEngine, llm: ScriptedLLM
+) -> None:
+    limited = settings.model_copy(update={"conversation_turns_per_window": 1})
+    async with app_client(limited, llm) as client:
+        headers = await token_for(client, ANA)
+        conversation_id = str((await chat(client, headers, "um"))["conversation_id"])
+        keyed = {**headers, "Idempotency-Key": str(uuid.uuid4())}
+        body = {"conversation_id": conversation_id, "message": "dois"}
+
+        refused = await client.post("/chat", json=body, headers=keyed)
+        retry = await client.post("/chat", json=body, headers=keyed)
+
+    assert refused.status_code == 429
+    assert retry.status_code == 429  # ran again, not 409 for a claim left behind
+
+
+async def test_a_key_whose_first_request_is_still_running_is_in_flight(redis: Redis) -> None:
+    idempotency = Idempotency(redis, ttl_seconds=60, in_flight_ttl_seconds=5)
+    key, request = str(uuid.uuid4()), {"message": "oi"}
+
+    assert await idempotency.claim(ANA, key, request) is None
+    with pytest.raises(IdempotencyKeyInFlight):
+        await idempotency.claim(ANA, key, request)
+    await idempotency.settle(ANA, key, request, {"reply": "olá"})
+
+    assert await idempotency.claim(ANA, key, request) == {"reply": "olá"}

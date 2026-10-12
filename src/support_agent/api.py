@@ -156,11 +156,15 @@ def create_app(
             )
             app.state.rate_limit = ConversationRateLimit(
                 redis,
-                turns=settings.chat_turns_per_window,
-                window_seconds=settings.chat_rate_window_seconds,
+                turns=settings.conversation_turns_per_window,
+                window_seconds=settings.conversation_rate_window_seconds,
             )
-            app.state.llm_budget = LLMBudget(redis, settings.llm_calls_per_day, today)
-            app.state.idempotency = Idempotency(redis, settings.idempotency_ttl_seconds)
+            app.state.llm_budget = LLMBudget(redis, settings.llm_calls_per_day)
+            app.state.idempotency = Idempotency(
+                redis,
+                settings.idempotency_ttl_seconds,
+                settings.idempotency_in_flight_ttl_seconds,
+            )
             app.state.decisions = Decisions(
                 app.state.sessions, app.state.conversations, checkpointer
             )
@@ -261,14 +265,15 @@ def create_app(
     async def take_turn(body: ChatRequest, request: Request, customer: Principal) -> ChatResponse:
         conversations: Conversations = request.app.state.conversations
         graph: CompiledStateGraph[Any, RunContext] = request.app.state.graph
-        try:
-            conversation_id = await conversations.open(customer.subject, body.conversation_id)
-        except ConversationNotFound:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from None
+        # Before opening: a refused first message mustn't leave an empty Conversation.
         try:
             await request.app.state.llm_budget.check()
         except RateLimited as limited:
             raise _too_many_requests(LLM_CAP_REPLY, limited) from None
+        try:
+            conversation_id = await conversations.open(customer.subject, body.conversation_id)
+        except ConversationNotFound:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from None
         try:
             await request.app.state.rate_limit.take(conversation_id)
         except RateLimited as limited:

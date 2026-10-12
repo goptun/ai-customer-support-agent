@@ -31,9 +31,7 @@ class ConversationRateLimit:
     async def take(self, conversation_id: uuid.UUID) -> None:
         """Count a turn; raises RateLimited, without counting it, once the window is full."""
         key = f"rate:conversation:{conversation_id}"
-        count = await self._redis.incr(key)
-        if count == 1:
-            await self._redis.expire(key, self._window)
+        count = await _count(self._redis, key, self._window)
         if count > self._turns:
             await self._redis.decr(key)
             ttl = await self._redis.ttl(key)
@@ -47,24 +45,32 @@ class LLMBudget:
     calls over the cap rather than being cut off halfway.
     """
 
-    def __init__(self, redis: Redis, calls_per_day: int, today: Callable[[], date]) -> None:
+    def __init__(self, redis: Redis, calls_per_day: int) -> None:
         self._redis = redis
         self._cap = calls_per_day
-        self._today = today
 
     async def check(self) -> None:
-        if int(await self._redis.get(self._key()) or 0) >= self._cap:
-            now = datetime.now(UTC)
+        now = datetime.now(UTC)
+        if int(await self._redis.get(self.key(now.date())) or 0) >= self._cap:
             midnight = datetime.combine(now.date() + timedelta(days=1), time(), UTC)
             raise RateLimited(max(1, int((midnight - now).total_seconds())))
 
     async def count(self) -> None:
-        key = self._key()
-        if await self._redis.incr(key) == 1:
-            await self._redis.expire(key, int(timedelta(days=2).total_seconds()))
+        key = self.key(datetime.now(UTC).date())
+        await _count(self._redis, key, int(timedelta(days=2).total_seconds()))
 
-    def _key(self) -> str:
-        return f"llm_calls:{self._today().isoformat()}"
+    @staticmethod
+    def key(day: date) -> str:
+        return f"llm_calls:{day.isoformat()}"
+
+
+async def _count(redis: Redis, key: str, ttl_seconds: int) -> int:
+    """Increment a counter, starting its TTL on the first increment, atomically."""
+    async with redis.pipeline(transaction=True) as pipe:
+        pipe.incr(key)
+        pipe.expire(key, ttl_seconds, nx=True)
+        count, _ = await pipe.execute()
+    return int(count)
 
 
 class MeteredLLM:
@@ -100,9 +106,11 @@ class Idempotency:
 
     _IN_FLIGHT = "in-flight"
 
-    def __init__(self, redis: Redis, ttl_seconds: int) -> None:
+    def __init__(self, redis: Redis, ttl_seconds: int, in_flight_ttl_seconds: int) -> None:
         self._redis = redis
         self._ttl = ttl_seconds
+        # Short, so a claim whose process died mid-turn doesn't answer 409 for a day.
+        self._in_flight_ttl = in_flight_ttl_seconds
 
     async def claim(
         self, customer_id: str, key: str, request: dict[str, Any]
@@ -111,7 +119,7 @@ class Idempotency:
         redis_key = self._key(customer_id, key)
         fingerprint = _fingerprint(request)
         entry = json.dumps({"fingerprint": fingerprint, "response": self._IN_FLIGHT})
-        if await self._redis.set(redis_key, entry, ex=self._ttl, nx=True):
+        if await self._redis.set(redis_key, entry, ex=self._in_flight_ttl, nx=True):
             return None
         stored = await self._redis.get(redis_key)
         if stored is None:  # expired in between: run it
