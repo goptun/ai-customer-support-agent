@@ -109,6 +109,11 @@ class DemoVisitors:
                     session.add(_shipment(order, dispatched_at, number))
         return DemoVisitor(customer.id, customer.name, attendant.id)
 
+    async def exists(self, customer_id: str) -> bool:
+        """Whether the Demo Visitor's Customer is still there (a Demo Reset removes it)."""
+        async with self._sessions() as session:
+            return await session.get(Customer, customer_id) is not None
+
 
 def _order(template: _Template, order_id: str, customer_id: str, noon: datetime) -> Order:
     sku, name, qty, unit_cents = template.item

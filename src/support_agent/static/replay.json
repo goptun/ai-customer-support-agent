@@ -1,0 +1,80 @@
+{
+  "source": "2026-10-04T2038Z-refund.json#refund_approved",
+  "orders": [
+    {
+      "order_id": "ORD-1001",
+      "status": "delivered",
+      "items": [
+        {
+          "name": "Fone Bluetooth",
+          "qty": 1
+        }
+      ],
+      "total_paid_cents": 24990,
+      "placed_at": "2026-08-12T12:00:00Z",
+      "promised_delivery_date": "2026-08-20",
+      "delivered_at": "2026-08-19T12:00:00Z"
+    },
+    {
+      "order_id": "ORD-1004",
+      "status": "shipped",
+      "items": [
+        {
+          "name": "Cafeteira",
+          "qty": 1
+        }
+      ],
+      "total_paid_cents": 32900,
+      "placed_at": "2026-08-20T12:00:00Z",
+      "promised_delivery_date": "2026-08-30",
+      "delivered_at": null
+    },
+    {
+      "order_id": "ORD-1002",
+      "status": "shipped",
+      "items": [
+        {
+          "name": "Mochila Urbana",
+          "qty": 1
+        }
+      ],
+      "total_paid_cents": 18900,
+      "placed_at": "2026-08-26T12:00:00Z",
+      "promised_delivery_date": "2026-09-03",
+      "delivered_at": null
+    },
+    {
+      "order_id": "ORD-1003",
+      "status": "processing",
+      "items": [
+        {
+          "name": "Caneca Térmica",
+          "qty": 2
+        }
+      ],
+      "total_paid_cents": 11980,
+      "placed_at": "2026-08-31T12:00:00Z",
+      "promised_delivery_date": "2026-09-08",
+      "delivered_at": null
+    }
+  ],
+  "turns": [
+    {
+      "message": "Quero reembolso do pedido ORD-1004, foi extraviado",
+      "notices": [],
+      "reply": "O pedido ORD-1004 tem direito a reembolso. Solicitei o reembolso de R$ 329,00, o valor máximo para este pedido. Pela Política de Reembolso, todo reembolso é aprovado por um atendente antes de ser emitido, então o reembolso #7 está aguardando aprovação. Você pode continuar falando comigo enquanto isso e me perguntar o status do reembolso quando quiser."
+    },
+    {
+      "message": "Enquanto isso, onde está o ORD-1002?",
+      "notices": [],
+      "reply": "O pedido ORD-1002 já foi enviado. O código de rastreio é **BR100000002** e a previsão de entrega é **03/09/2026**. No momento, o objeto está em trânsito para a unidade de destino."
+    },
+    {
+      "message": "E o meu reembolso do ORD-1004, como está?",
+      "notices": [
+        "O reembolso #7 de R$ 329,00 do pedido ORD-1004 foi aprovado por um atendente e emitido."
+      ],
+      "reply": "Reembolsos do pedido ORD-1004:\n- Reembolso #7 do pedido ORD-1004, de R$ 329,00: emitido."
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import asyncio
+import enum
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Annotated, Any, Literal, Self
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from langchain_core.tracers.langchain import wait_for_all_tracers
@@ -20,7 +22,14 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from support_agent.approvals import ApprovalDecision
-from support_agent.auth import InvalidToken, Principal, Role, issue_token, verify_token
+from support_agent.auth import (
+    ExpiredToken,
+    InvalidToken,
+    Principal,
+    Role,
+    issue_token,
+    verify_token,
+)
 from support_agent.cancellations import Cancellations
 from support_agent.config import Settings, get_settings
 from support_agent.conversations import ConversationNotFound, Conversations
@@ -76,12 +85,16 @@ class DemoVisitorRequest(BaseModel):
 
 class DemoVisitorResponse(TokenResponse):
     expires_in: int
+    # Known up front, so the page plays the replay instead of a chat that would be refused.
+    llm_cap_exhausted: bool
     customer_name: str
     orders: list[OrderView]
 
 
 class DemoConfig(BaseModel):
     turnstile_site_key: str | None
+    # Lets the page go straight to the replay, before the Turnstile check or a resumed chat.
+    llm_cap_exhausted: bool
 
 
 class ChatRequest(BaseModel):
@@ -125,10 +138,32 @@ LLM_CAP_REPLY = (
 )
 
 
-def _too_many_requests(detail: str, limited: RateLimited) -> HTTPException:
-    return HTTPException(
+class Signal(enum.StrEnum):
+    """Machine-readable `code` next to `detail`, for the errors the demo page acts on."""
+
+    # The Demo Visitor's token expired or its Customer is gone (Demo Reset): admit a new one.
+    DEMO_RESTART = "demo_restart"
+    LLM_CAP_EXHAUSTED = "llm_cap_exhausted"
+    CONVERSATION_RATE_LIMITED = "conversation_rate_limited"
+
+
+class SignalledHTTPException(HTTPException):
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        signal: Signal,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(status_code, detail, headers)
+        self.signal = signal
+
+
+def _too_many_requests(detail: str, signal: Signal, limited: RateLimited) -> HTTPException:
+    return SignalledHTTPException(
         status.HTTP_429_TOO_MANY_REQUESTS,
         detail,
+        signal,
         headers={"Retry-After": str(limited.retry_after_seconds)},
     )
 
@@ -250,25 +285,43 @@ def create_app(
     app = FastAPI(title="Customer Support Agent", lifespan=lifespan, root_path=settings.root_path)
     bearer = HTTPBearer(auto_error=False)
 
-    def authenticated(role: Role) -> Callable[..., Principal]:
-        def principal(
+    @app.exception_handler(SignalledHTTPException)
+    async def signalled(_: Request, exc: SignalledHTTPException) -> JSONResponse:
+        return JSONResponse(
+            {"detail": exc.detail, "code": exc.signal}, exc.status_code, headers=exc.headers
+        )
+
+    def authenticated(role: Role) -> Callable[..., Awaitable[Principal]]:
+        async def principal(
+            request: Request,
             credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
         ) -> Principal:
+            challenge = {"WWW-Authenticate": "Bearer"}
             unauthorized = HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "Invalid or missing token", headers=challenge
+            )
+            restart = SignalledHTTPException(
                 status.HTTP_401_UNAUTHORIZED,
-                "Invalid or missing token",
-                headers={"WWW-Authenticate": "Bearer"},
+                "Demo Visitor no longer admitted",
+                Signal.DEMO_RESTART,
+                headers=challenge,
             )
             if credentials is None:
                 raise unauthorized
             try:
                 found = verify_token(credentials.credentials, settings.jwt_secret)
+            except ExpiredToken as expired:
+                # Tokens are not renewed: an expired Demo Visitor is admitted anew.
+                raise (restart if expired.principal.is_demo_visitor else unauthorized) from None
             except InvalidToken:
                 raise unauthorized from None
             if found.role is not role:
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN, f"{role.capitalize()} token required"
                 )
+            demo_visitors: DemoVisitors = request.app.state.demo_visitors
+            if found.is_demo_visitor and not await demo_visitors.exists(found.subject):
+                raise restart  # a Demo Reset removed its Customer
             return found
 
         return principal
@@ -300,8 +353,12 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/demo/config")
-    async def demo_config() -> DemoConfig:
-        return DemoConfig(turnstile_site_key=settings.turnstile_site_key)
+    async def demo_config(request: Request) -> DemoConfig:
+        llm_budget: LLMBudget = request.app.state.llm_budget
+        return DemoConfig(
+            turnstile_site_key=settings.turnstile_site_key,
+            llm_cap_exhausted=await llm_budget.exhausted(),
+        )
 
     @app.post("/demo/visitors", status_code=status.HTTP_201_CREATED)
     async def admit_demo_visitor(body: DemoVisitorRequest, request: Request) -> DemoVisitorResponse:
@@ -316,6 +373,7 @@ def create_app(
             subject=visitor.customer_id, role=Role.CUSTOMER, attendant_id=visitor.attendant_id
         )
         orders: Orders = request.app.state.orders
+        llm_budget: LLMBudget = request.app.state.llm_budget
         return DemoVisitorResponse(
             access_token=issue_token(
                 principal, settings.jwt_secret, settings.demo_token_ttl_seconds
@@ -323,6 +381,7 @@ def create_app(
             expires_in=settings.demo_token_ttl_seconds,
             customer_name=visitor.customer_name,
             orders=await orders.of_customer(visitor.customer_id),
+            llm_cap_exhausted=await llm_budget.exhausted(),
         )
 
     @app.get("/orders")
@@ -339,7 +398,7 @@ def create_app(
         try:
             await request.app.state.llm_budget.check()
         except RateLimited as limited:
-            raise _too_many_requests(LLM_CAP_REPLY, limited) from None
+            raise _too_many_requests(LLM_CAP_REPLY, Signal.LLM_CAP_EXHAUSTED, limited) from None
         try:
             conversation_id = await conversations.open(customer.subject, body.conversation_id)
         except ConversationNotFound:
@@ -347,7 +406,9 @@ def create_app(
         try:
             await request.app.state.rate_limit.take(conversation_id)
         except RateLimited as limited:
-            raise _too_many_requests(RATE_LIMITED_REPLY, limited) from None
+            raise _too_many_requests(
+                RATE_LIMITED_REPLY, Signal.CONVERSATION_RATE_LIMITED, limited
+            ) from None
 
         decisions: Decisions = request.app.state.decisions
         notices = await decisions.surface_unseen(customer.subject, conversation_id)

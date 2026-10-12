@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preload" href="/fonts/noto-sans-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/fonts/fonts.css">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 <script src="/theme-init.js"></script>
 </head>
 <body>
@@ -55,6 +55,10 @@
   <p class="notice" role="note">
     <strong>Demo pública</strong> — não informe dados reais; tudo é apagado diariamente.
   </p>
+  <p class="notice" id="unavailable" role="status" hidden>
+    <strong>Demo indisponível hoje</strong> — o agente atingiu o limite diário de uso desta
+    demonstração; volte amanhã. Enquanto isso, veja o replay de uma conversa real com ele.
+  </p>
 
   <div class="layout">
     <aside class="panel orders-panel" aria-labelledby="orders-title">
@@ -66,6 +70,7 @@
       <div class="chat-head">
         <h2 id="chat-title">Conversa</h2>
         <button class="ghost" id="new-conversation" type="button" disabled>Nova conversa</button>
+        <button class="ghost" id="replay-again" type="button" hidden>Rever replay</button>
       </div>
       <div class="messages" id="messages" role="log" aria-live="polite"></div>
       <div class="chips" id="chips" aria-label="Sugestões de perguntas"></div>
@@ -87,6 +92,6 @@
 </main>
 
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
-<script src="app.js?v=1" defer></script>
+<script src="app.js?v=2" defer></script>
 </body>
 </html>

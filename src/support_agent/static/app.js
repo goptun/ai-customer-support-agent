@@ -26,6 +26,11 @@ const sendBtn = document.getElementById('send');
 const newConversationBtn = document.getElementById('new-conversation');
 const statusEl = document.getElementById('status');
 const turnstileEl = document.getElementById('turnstile');
+const unavailableEl = document.getElementById('unavailable');
+const replayAgainBtn = document.getElementById('replay-again');
+
+const RESTARTED = 'A demo foi reiniciada: você recebeu um novo cliente com outros pedidos.';
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const day = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
@@ -34,16 +39,29 @@ let visitor = null; // { token, expiresAt, conversationId }
 let busy = false;
 let widgetId = null;
 let pendingNotice = null; // shown once the next admission succeeds
+let replaying = false; // the daily LLM cap is exhausted: no chat, a recorded Conversation
+let replay = null; // the recorded Conversation, once fetched
 
 // Per-viewer convenience only: the page works without storage.
 function loadVisitor() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (stored && typeof stored.token === 'string' && stored.expiresAt > Date.now() + 60000) {
-      return stored;
-    }
+    if (stored && typeof stored.token === 'string') return stored;
   } catch (_) { /* storage unavailable */ }
   return null;
+}
+
+// Tokens aren't renewed: one about to expire is as good as expired.
+function isExpiring(stored) {
+  return !(stored.expiresAt > Date.now() + 60000);
+}
+
+async function fetchConfig() {
+  try {
+    return await (await fetch('demo/config')).json();
+  } catch (_) {
+    return {};
+  }
 }
 
 function saveVisitor() {
@@ -144,12 +162,12 @@ function api(path, options = {}) {
   return fetch(path, { ...options, headers });
 }
 
-// Whether the visitor still has Orders: after a Demo Reset their Customer is gone.
+// Whether the visitor is still admitted: false once the token expired or a Demo Reset ran.
 async function refreshOrders() {
   const response = await api('orders');
-  if (!response.ok) return false;
+  if (response.status === 401) return false;
+  if (!response.ok) return true; // a transient failure; keep the Orders shown
   const orders = await response.json();
-  if (orders.length === 0) return false;
   renderOrders(orders);
   renderChips(orders);
   return true;
@@ -183,11 +201,10 @@ async function admit(notice) {
   pendingNotice = notice;
   setReady(false);
   setStatus('Preparando sua demo…');
-  let config;
-  try {
-    config = await (await fetch('demo/config')).json();
-  } catch (_) {
-    config = {};
+  const config = await fetchConfig();
+  if (config.llm_cap_exhausted) {
+    await startReplay();
+    return;
   }
   if (!config.turnstile_site_key) {
     setStatus('A demo está indisponível no momento. Tente de novo mais tarde.', true);
@@ -226,6 +243,10 @@ async function onVerified(turnstileToken) {
     return;
   }
   const admitted = await response.json();
+  if (admitted.llm_cap_exhausted) {
+    await startReplay();
+    return;
+  }
   visitor = {
     token: admitted.access_token,
     expiresAt: Date.now() + admitted.expires_in * 1000,
@@ -266,8 +287,9 @@ async function send(text) {
     });
     typing.remove();
     if (response.status === 401) {
+      // Expired, or caught by a Demo Reset: tokens aren't renewed, a new visitor is admitted.
       busy = false;
-      await startOver('Seu acesso à demo expirou; começamos uma nova com outros pedidos.');
+      await startOver(RESTARTED);
       return;
     }
     if (response.status === 404) {
@@ -278,6 +300,11 @@ async function send(text) {
     }
     if (response.status === 429) {
       const body = await response.json().catch(() => ({}));
+      if (body.code === 'llm_cap_exhausted') {
+        busy = false;
+        await startReplay();
+        return;
+      }
       const wait = response.headers.get('Retry-After');
       const suffix = wait ? ` Tente de novo em ${wait} s.` : '';
       addMessage('error', `${body.detail || 'Muitas mensagens em pouco tempo.'}${suffix}`);
@@ -292,14 +319,70 @@ async function send(text) {
     saveVisitor();
     turn.notices.forEach((notice) => addMessage('notice', notice));
     addMessage('agent', turn.reply);
-    refreshOrders(); // a Cancellation changes an Order's status
+    // A Cancellation changes an Order's status.
+    refreshOrders().then((admitted) => { if (!admitted) startOver(RESTARTED); }).catch(() => {});
   } catch (_) {
     typing.remove();
     addMessage('error', 'Sem conexão com o servidor. Tente de novo.');
   } finally {
     busy = false;
-    if (visitor) setReady(true);
+    if (visitor && !replaying) setReady(true);
   }
+}
+
+// Replay mode: a recorded real Conversation, typed out in the same UI; no LLM calls.
+const pause = (ms) => new Promise((resolve) => { setTimeout(resolve, reducedMotion ? 0 : ms); });
+
+async function typeOut(kind, text, msPerChar) {
+  const div = addMessage(kind, '');
+  if (reducedMotion) {
+    div.textContent = text;
+    return;
+  }
+  for (let i = 1; i <= text.length; i += 1) {
+    div.textContent = text.slice(0, i);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    await pause(msPerChar);
+  }
+}
+
+async function playReplay(replay) {
+  replayAgainBtn.disabled = true;
+  messagesEl.replaceChildren();
+  addMessage('agent', WELCOME);
+  for (const turn of replay.turns) {
+    await pause(900);
+    await typeOut('customer', turn.message, 35);
+    await pause(400);
+    const typing = addMessage('agent', 'Digitando…');
+    typing.classList.add('msg-typing');
+    await pause(1400);
+    typing.remove();
+    turn.notices.forEach((notice) => addMessage('notice', notice));
+    await typeOut('agent', turn.reply, 8);
+  }
+  replayAgainBtn.disabled = false;
+}
+
+async function startReplay() {
+  replaying = true;
+  visitor = null;
+  saveVisitor();
+  setReady(false);
+  chipsEl.replaceChildren();
+  composerEl.hidden = true;
+  newConversationBtn.hidden = true;
+  unavailableEl.hidden = false;
+  setStatus('');
+  try {
+    replay = replay || await (await fetch('replay.json')).json();
+  } catch (_) {
+    setStatus('Não foi possível carregar o replay. Recarregue a página.', true);
+    return;
+  }
+  renderOrders(replay.orders);
+  replayAgainBtn.hidden = false;
+  await playReplay(replay);
 }
 
 composerEl.addEventListener('submit', (event) => {
@@ -314,6 +397,8 @@ messageEl.addEventListener('keydown', (event) => {
   }
 });
 
+replayAgainBtn.addEventListener('click', () => { if (replay) playReplay(replay); });
+
 newConversationBtn.addEventListener('click', () => {
   if (!visitor) return;
   visitor.conversationId = null;
@@ -324,17 +409,29 @@ newConversationBtn.addEventListener('click', () => {
 
 async function start() {
   visitor = loadVisitor();
+  if (visitor && isExpiring(visitor)) {
+    await startOver(RESTARTED);
+    return;
+  }
+  if (visitor && (await fetchConfig()).llm_cap_exhausted) {
+    await startReplay();
+    return;
+  }
   if (visitor) {
     setStatus('Retomando sua demo…');
-    if (await refreshOrders().catch(() => false)) {
+    let admitted = null; // null: the server couldn't be reached
+    try {
+      admitted = await refreshOrders();
+    } catch (_) { /* start over, without claiming a restart */ }
+    if (admitted) {
       resetConversation();
       await restoreConversation();
       setStatus('');
       setReady(true);
       return;
     }
-    visitor = null;
-    saveVisitor();
+    await startOver(admitted === false ? RESTARTED : null);
+    return;
   }
   await admit(null);
 }
