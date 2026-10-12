@@ -75,3 +75,13 @@ _Avoid_: Disambiguation, follow-up
 **Knowledge Base**:
 The written policies (delivery, exchange, refund) the agent cites when answering.
 _Avoid_: FAQ, docs
+
+### Demo
+
+**Demo Visitor**:
+An anonymous person trying the public demo, given a fictitious Customer and a fictitious Attendant of their own; they chat as that Customer and decide only that Customer's Approval Requests, and nothing they do reaches a real human. A new Demo Visitor starts when their access expires or after a Demo Reset.
+_Avoid_: Recruiter, guest, test user, demo session
+
+**Demo Reset**:
+The daily rebuild of all demo data from scratch to its initial seeded state, discarding every Demo Visitor along with their Conversations, actions and Audit Log.
+_Avoid_: Cleanup, wipe
