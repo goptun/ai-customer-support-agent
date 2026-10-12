@@ -84,6 +84,33 @@ def test_a_status_named_only_to_deny_it_is_not_stated() -> None:
     assert fallback_reason(reply, facts) is None
 
 
+# A line starting with the status or wording itself: `$` would match before that line break.
+LINE_BREAKS = [
+    pytest.param("- Não atrasou\n- ", id="list"),
+    pytest.param("Não atrasou\n", id="line_start"),
+    pytest.param("Não atrasou \n", id="trailing_space"),
+    pytest.param("Não atrasou\r\n", id="crlf"),
+]
+
+
+@pytest.mark.parametrize("negated_line", LINE_BREAKS)
+def test_a_negation_does_not_deny_a_status_on_the_next_line(negated_line: str) -> None:
+    reply = f"Rastreio BR100000002, previsão 03/09/2026.\n{negated_line}Entregue"
+
+    assert fallback_reason(reply, FACTS) == FallbackReason(ungrounded=["Entregue"])
+
+
+@pytest.mark.parametrize("negated_line", LINE_BREAKS)
+def test_a_negation_does_not_contradict_a_wording_on_the_next_line(negated_line: str) -> None:
+    facts = Facts(
+        text="Pedido ORD-1004: enviado.\nSituação na transportadora: extraviado.",
+        statuses=frozenset({"enviado", "extraviado"}),
+        required=frozenset({frozenset({"extraviad", "extravio"})}),
+    )
+
+    assert fallback_reason(f"{negated_line}Extraviado, infelizmente", facts) is None
+
+
 @pytest.mark.parametrize(
     ("reply", "unaffirmed"),
     [
