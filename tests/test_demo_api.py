@@ -251,6 +251,8 @@ async def test_api_docs_work_under_the_root_path(settings: Settings, llm: Script
 async def test_dev_token_is_not_found_when_disabled(settings: Settings, llm: ScriptedLLM) -> None:
     production = settings.model_copy(update={"dev_token_enabled": False})
     async with app_client(production, llm) as client:
-        response = await client.post("/auth/dev-token", json={"customer_id": "cus_ana"})
+        valid = await client.post("/auth/dev-token", json={"customer_id": "cus_ana"})
+        empty = await client.post("/auth/dev-token", json={})
+        bare = await client.post("/auth/dev-token")
 
-    assert response.status_code == 404
+    assert [valid.status_code, empty.status_code, bare.status_code] == [404, 404, 404]
