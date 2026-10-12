@@ -171,13 +171,13 @@ The JSON the classifier must return is asked for in the prompt and parsed lenien
 
 ### Tracing (LangSmith)
 
-Off unless set, and always off under Compose: `compose.yaml` is the production project and forces `LANGSMITH_TRACING=false`, since traces carry Customer messages. To trace the containers on a dev machine, put the setting in an untracked `compose.override.yaml` (gitignored; Compose loads it automatically, so never create one on the VPS):
+Off unless set, and always off under Compose: `compose.yaml` is the production project and forces `LANGSMITH_TRACING=false` (and the legacy `LANGSMITH_TRACING_V2` / `LANGCHAIN_TRACING_V2`), since traces carry Customer messages. To trace the containers on a dev machine, put the setting in an untracked `compose.override.yaml` (gitignored; Compose loads it automatically, so never create one on the VPS):
 
 ```yaml
 services:
   app:
     environment:
-      LANGSMITH_TRACING: "true"
+      LANGSMITH_TRACING_V2: "true"   # langsmith reads *_TRACING_V2 before *_TRACING
 ```
 
 and the key and project in `.env`, then restart the app:
@@ -211,7 +211,7 @@ Public at `https://support.matheusramos.dev`, on the VPS next to the other servi
 
 #### Resource limits
 
-The VPS has 2 vCPUs, ~11.6 GiB of RAM and no swap, and the services already there use about 3.5 GiB (rag_api ~1 GiB, fraud's Kafka ~0.5 GiB, the rest ~100 MiB each). An OOM without swap kills whatever the kernel picks, so every `support` service has a hard `mem_limit` and the project as a whole stays under ~1.9 GiB:
+The VPS has 2 vCPUs, ~11.6 GiB of RAM and no swap, and the services already there use about 3.5 GiB (rag_api ~1 GiB, fraud's Kafka ~0.5 GiB, ballot_postgres, newsletter and the rest ~100–170 MiB each). An OOM without swap kills whatever the kernel picks, so every `support` service has a hard `mem_limit` and the project as a whole stays under ~1.9 GiB:
 
 | Service | `mem_limit` | `cpus` | Measured (peak) | Why |
 | --- | --- | --- | --- | --- |

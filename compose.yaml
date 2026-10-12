@@ -7,6 +7,7 @@ x-python-healthcheck: &python-healthcheck
   interval: 30s
   timeout: 5s
   retries: 3
+  start_interval: 2s
 
 services:
   app:
@@ -18,6 +19,8 @@ services:
       LOGISTICS_URL: http://logistics:8080
       # Production: no LangSmith traces (they'd carry Customer messages). See README → Tracing.
       LANGSMITH_TRACING: "false"
+      LANGSMITH_TRACING_V2: "false"
+      LANGCHAIN_TRACING_V2: "false"
       LLM_CALLS_PER_DAY: ${LLM_CALLS_PER_DAY:-300}
     ports:
       - "127.0.0.1:8003:8000"

@@ -124,6 +124,7 @@ def create_app(timeout_delay_seconds: float | None = None) -> FastAPI:
     )
     app = FastAPI(title="Logistics carrier (mock)")
 
+    # Liveness for the Compose healthcheck.
     @app.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:
         return {"status": "ok"}
