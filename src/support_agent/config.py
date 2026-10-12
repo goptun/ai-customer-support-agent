@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     working_state_ttl_seconds: int = 1800
     working_state_window: int = 20
     # anthropic: the Claude API. openai_compatible: any chat completions endpoint, e.g. the
-    # 9router on the VPS (ADR-0004); the model names below are then that endpoint's.
+    # self-hosted router (ADR-0004); the model names below are then that endpoint's.
     llm_provider: Literal["anthropic", "openai_compatible"] = "anthropic"
     anthropic_api_key: SecretStr | None = None
-    llm_base_url: str | None = None  # with /v1, e.g. http://router:20128/v1
+    llm_base_url: str | None = None  # with /v1, e.g. http://router:8080/v1
     llm_api_key: SecretStr | None = None
     # Per request, before the SDK's retries: a combo may take tens of seconds per answer.
     llm_timeout_seconds: float = 180.0

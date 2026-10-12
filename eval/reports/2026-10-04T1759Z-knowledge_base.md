@@ -1,7 +1,7 @@
 # Evaluation: knowledge_base — 2026-10-04
 
 - Started at: 2026-10-04T17:59:15.014774+00:00
-- Models (openai_compatible): classifier `arsenal-vps`, responder `arsenal-vps`, judge `arsenal-vps`
+- Models (openai_compatible): classifier `router-model`, responder `router-model`, judge `router-model`
 - Commit: `66d44a9-dirty`
 - Conversations: 9 (9 Customer turns)
 

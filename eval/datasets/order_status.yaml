@@ -1,4 +1,4 @@
-# Order status: every logistics scenario of the seeded Orders (README, "Logistics scenarios"),
+# Order status: every logistics scenario of the seeded Orders (docs/development.md, "Logistics scenarios"),
 # plus finding the Order (single recent Order, Clarification, Focused Order), ownership and a
 # Customer who asks for a human. Dates follow the seed's anchor (today = 01/09/2026).
 #

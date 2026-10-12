@@ -1,26 +1,42 @@
-# ai-customer-support-agent
+# Agente de Atendimento ao Cliente
 
-An AI agent that resolves Customer requests about their Orders in pt-BR (status, Cancellation, Refund, policy questions), escalating to an Attendant when it can't. Domain language: [GLOSSARY.md](GLOSSARY.md). Decisions: [docs/adr/](docs/adr/).
+[English summary](README.en.md) · **[Testar a demo →](https://matheusramos.dev/projects/support/)**
 
-## Architecture
+Um agente de IA que atende, em português, os clientes de uma loja fictícia: consulta pedidos e rastreio, cancela pedidos ainda não enviados, pede reembolsos que passam por aprovação humana e responde sobre as políticas da loja. Quando não consegue resolver, abre um chamado para um atendente.
 
+![Replay de uma conversa na demo: o cliente pede reembolso de um pedido extraviado, consulta outro pedido e vê o reembolso aprovado pelo atendente](docs/demo.gif)
+
+## O problema
+
+Atendimento de e-commerce é repetitivo ("cadê meu pedido?", "quero cancelar", "quero meu dinheiro de volta"), mas não dá para entregar a um LLM: ele inventa prazos e valores, e qualquer ação que mexe com dinheiro precisa ser auditável e, às vezes, aprovada por uma pessoa. Este projeto mostra um agente em que **o LLM só entende a mensagem e redige a resposta**: todo fato vem de uma ferramenta, toda ação é uma chamada de ferramenta idempotente e auditada, e um reembolso que exige aprovação pausa até um atendente decidir, sem travar a conversa.
+
+Na demo, cada visitante vira um cliente fictício com pedidos em estados diferentes e, num painel ao lado, o atendente desse cliente: pede um reembolso no chat, aprova ou rejeita no painel e vê a conversa reagir.
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+  visitor([Visitante / cliente]) -->|HTTPS| edge[Cloudflare + nginx<br/>Turnstile, rate limit]
+  attendant([Atendente]) -->|HTTPS| edge
+  edge --> api[FastAPI<br/>JWT, limites por conversa e diários]
+  api --> conv[Grafo da conversa<br/>LangGraph]
+  api --> appr[Fluxo de aprovação<br/>LangGraph]
+  conv --> llm[(LLM<br/>Anthropic ou roteador<br/>OpenAI-compatível)]
+  conv --> tools[Ferramentas<br/>idempotentes e auditadas]
+  appr --> tools
+  tools --> pg[(Postgres + pgvector<br/>dados, auditoria,<br/>base de conhecimento,<br/>checkpoints)]
+  tools --> carrier[Transportadora<br/>mock HTTP]
+  conv --> redis[(Redis<br/>estado da conversa,<br/>contadores)]
 ```
-Customer / Attendant ──HTTP──▶ FastAPI (api.py) ──▶ Conversation graph (LangGraph, graph.py)
-                                    │                    │  LLM: Haiku classifies, Sonnet writes replies (llm.py)
-                                    │                    └─ tools (tools.py) ─▶ Postgres · logistics carrier · Knowledge Base
-                                    └─ /approvals ─▶ approval workflow (LangGraph, approvals.py) ─▶ Refunds
-```
 
-- **API** (`api.py`): JWT-authenticated `/chat` for Customers, `/approvals` and `/tickets` for Attendants, `/auth/dev-token` for local tokens (only with `DEV_TOKEN_ENABLED=true`).
-- **Demo page** (`static/`, served at `/`): a pt-BR chat UI. After an invisible Cloudflare Turnstile check (`POST /demo/visitors`) each Demo Visitor gets a fictitious Customer with Orders in distinct states and a paired Attendant ([ADR-0005](docs/adr/0005-demo-visitor-is-customer-and-scoped-attendant.md)), with a ~2h token. Needs `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`; set `ROOT_PATH` when served under a prefix (e.g. `/projects/support`) so `/docs` works. Tokens are not renewed: an expired one, or one whose Customer a Demo Reset removed, gets `401` with `code: demo_restart` and the page admits a new Demo Visitor. When the daily LLM cap is exhausted (`llm_cap_exhausted` in `GET /demo/config` and the admission response, or `code: llm_cap_exhausted` on a `429` from `/chat`), the page plays `static/replay.json`, a recorded eval Conversation, instead of chatting. Its "Visão do atendente" panel lets the Demo Visitor act as their paired Attendant: the same `/approvals` and `/tickets` accept their token, scoped to their own Customer (another Demo Visitor's Approval Request is a `404`), and decisions are recorded against the paired Attendant.
-- **Conversation graph** (`graph.py`): one run per Customer message on the Conversation's thread. The LLM only classifies the Intent and words the reply; every fact comes from a tool and every side effect is a tool call (idempotent, audited).
-- **Approval workflow** (`approvals.py`, `decisions.py`): a Refund waiting for an Attendant pauses on a thread of its own ([ADR-0002](docs/adr/0002-separate-thread-per-approval-workflow.md)), so the Customer keeps chatting.
-- **Postgres** (pgvector): domain data, the audit log, the Knowledge Base embeddings and the LangGraph checkpoints, so paused runs survive restarts ([ADR-0001](docs/adr/0001-postgres-checkpointer-for-paused-runs.md)). **Redis**: a disposable cache of each Conversation's working state.
-- **Logistics carrier**: a mock HTTP service with deterministic scenarios (below).
+- **API** (FastAPI): `/chat` para o cliente, `/approvals` e `/tickets` para o atendente, `/demo/visitors` para admitir um visitante após o Turnstile. Documentação interativa em [`/docs`](https://matheusramos.dev/projects/support/docs).
+- **Grafo da conversa**: uma execução por mensagem do cliente. O LLM classifica a intenção e escreve a resposta a partir dos fatos das ferramentas; nada além disso.
+- **Fluxo de aprovação**: um reembolso que precisa de atendente pausa numa thread própria, persistida no Postgres, e o cliente continua conversando. A decisão aparece na conversa.
+- **Postgres** guarda os dados, o log de auditoria (append-only, garantido por trigger), os embeddings das políticas (pgvector, modelo multilíngue local) e os checkpoints do LangGraph. **Redis** é só cache descartável e contadores.
 
-### Conversation graph
+### Grafo da conversa
 
-Generated from the compiled graph (dashed edges are routing decisions):
+Gerado a partir do grafo compilado (arestas tracejadas são decisões de roteamento); um teste falha se o diagrama ficar desatualizado.
 
 <!-- graph:conversation -->
 ```mermaid
@@ -66,19 +82,19 @@ graph TD;
 ```
 <!-- /graph:conversation -->
 
-| Node | Does |
+| Nó | Faz |
 |---|---|
-| `classify_intent` | Classifies the message into Intents and entities; queues extra Intents, asks for Clarification when unsure. |
-| `resolve_context` | Picks the Order: the one named, the Focused Order or the only recent one; otherwise gathers recent Orders for the reply to list. |
-| `act` | Calls the tool for the Intent (order status, Cancellation preview, Refund request); repeated order-status failures escalate. |
-| `consult_knowledge_base` | Retrieves policy sections for a policy question. |
-| `check_refunds` | Reads the status of Refunds already requested. |
-| `respond` | Writes the reply from the tool facts only. |
-| `await_confirmation` | Pauses until the Customer confirms or denies a Cancellation. |
-| `cancel` | Cancels the Order (and its automatic Refund). |
-| `escalate` | Opens a Ticket for an Attendant. |
+| `classify_intent` | Classifica a mensagem em intenções e entidades; enfileira intenções extras e pede esclarecimento quando não tem certeza. |
+| `resolve_context` | Escolhe o pedido: o citado, o que está em foco ou o único recente; senão lista os recentes. |
+| `act` | Chama a ferramenta da intenção (status do pedido, prévia de cancelamento, pedido de reembolso); falhas repetidas da transportadora escalam. |
+| `consult_knowledge_base` | Busca as seções de política relevantes (RAG). |
+| `check_refunds` | Consulta o status de reembolsos já pedidos. |
+| `respond` | Escreve a resposta só com os fatos das ferramentas. |
+| `await_confirmation` | Pausa até o cliente confirmar ou negar um cancelamento. |
+| `cancel` | Cancela o pedido (e emite o reembolso automático). |
+| `escalate` | Abre um chamado para um atendente. |
 
-### Approval workflow
+### Fluxo de aprovação
 
 <!-- graph:approval -->
 ```mermaid
@@ -101,16 +117,53 @@ graph TD;
 ```
 <!-- /graph:approval -->
 
-After changing a graph, run `uv run python -m support_agent.diagram` to regenerate both diagrams; `tests/test_graph_diagram.py` fails while they are out of date.
+## Decisões principais
 
-## Run locally
+Registradas como ADRs em [`docs/adr/`](docs/adr/); o vocabulário do domínio está em [`GLOSSARY.md`](GLOSSARY.md).
+
+- **Checkpoints no Postgres, não no Redis** ([ADR-0001](docs/adr/0001-postgres-checkpointer-for-paused-runs.md)): uma aprovação pode esperar dias, e perder o checkpoint por TTL seria perder uma decisão sobre dinheiro.
+- **Uma thread por fluxo de aprovação** ([ADR-0002](docs/adr/0002-separate-thread-per-approval-workflow.md)): `interrupt()` pausa a thread inteira, então a aprovação roda à parte e o cliente segue conversando.
+- **Reembolso de cancelamento dispensa aprovação** ([ADR-0003](docs/adr/0003-cancellation-refund-skips-approval.md)): o caso é inequívoco e decorre do cancelamento no código, não de uma decisão do LLM.
+- **Provedor de LLM configurável** ([ADR-0004](docs/adr/0004-openai-compatible-llm-provider.md)): Anthropic por padrão, ou qualquer endpoint OpenAI-compatível. O JSON é pedido no prompt e lido com tolerância; o que não for entendido nunca vira uma confirmação.
+- **Visitante da demo = cliente + atendente próprio** ([ADR-0005](docs/adr/0005-demo-visitor-is-customer-and-scoped-attendant.md)): cada visitante vê e decide só as próprias solicitações; ninguém estraga a demo do outro.
+- **Reset diário reconstrói o banco** ([ADR-0006](docs/adr/0006-demo-reset-rebuilds-the-database.md)): em vez de abrir uma brecha no log de auditoria append-only, o schema é recriado do zero todo dia.
+
+## Avaliação
+
+Conversas roteirizadas rodam contra os modelos reais com um comando (`uv run python -m support_agent.evaluation`), fora do CI. São ~67 conversas em 5 datasets (status do pedido em cada cenário da transportadora, cancelamento, todas as regras de reembolso, perguntas sobre políticas, conversas com várias intenções e pedidos de humano), cada uma com o resultado esperado, as chamadas de ferramenta corretas e os fatos que a resposta precisa conter. Um LLM juiz aponta afirmações da resposta que as ferramentas não sustentam.
+
+Última execução de cada dataset ([relatórios](eval/reports/)), com um roteador OpenAI-compatível:
+
+| Métrica | Resultado |
+|---|---|
+| Conclusão da tarefa | 66 de 67 conversas |
+| Acerto de chamadas de ferramenta (por turno) | 100% |
+| Acerto de intenção (por turno) | 100% |
+| Taxa de alucinação (21 turnos julgados) | 0% |
+| Escalonamentos evitáveis | 0% |
+
+Os relatórios também trazem latência p50/p95 de ponta a ponta e por nó, e uma amostra de ~10% das conversas para revisão humana do juiz. Detalhes em [docs/development.md](docs/development.md#evaluation).
+
+## Segurança e proteção contra abuso
+
+- **Fatos e ações só por ferramentas**: valores, prazos e status vêm do banco ou da transportadora; cada efeito colateral é idempotente e fica no log de auditoria, que é append-only por trigger.
+- **Humano no circuito**: reembolsos fora do caso trivial esperam um atendente; rejeitar exige motivo.
+- **Admissão da demo**: Cloudflare Turnstile verificado no servidor antes de criar o visitante; token de ~2 h, sem renovação; cada visitante só enxerga o próprio cliente.
+- **Limites em camadas**: nginx por IP, turnos por conversa por minuto e um teto diário de chamadas ao LLM. Ao bater o teto, a demo avisa e passa a mostrar um replay gravado, sem chamar o LLM.
+- **Idempotência**: `Idempotency-Key` torna seguro reenviar uma mensagem.
+- **Privacidade**: tracing do LangSmith desligado em produção; os dados da demo são apagados todo dia.
+- **Convivência na VPS**: limites de memória e CPU, healthchecks e restart em todos os serviços; só a app publica porta, e só em `127.0.0.1`.
+
+## Como rodar localmente
+
+Requer Docker, `jq` (para os exemplos) e uma chave de LLM (Anthropic ou um endpoint OpenAI-compatível).
 
 ```sh
-cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET and the LLM provider (below)
+cp .env.example .env   # defina POSTGRES_PASSWORD, JWT_SECRET e o provedor de LLM
 docker compose up -d --build
 ```
 
-Starts the app (127.0.0.1:8003), Postgres (pgvector), Redis and a mock logistics carrier (no published port). On start the app runs Alembic migrations and an idempotent seed of fictional Customers (`cus_ana`, `cus_bruno`, `cus_carla`, and `cus_diego` with a single recent Order), Attendants (`att_julia`, `att_marcos`) and Orders. It also indexes the Knowledge Base: the pt-BR policies in `src/support_agent/policies/` (one Markdown file per policy, one chunk per `##` section), embedded with a local multilingual model baked into the image (fastembed) and stored in pgvector. Only documents that changed are re-embedded.
+Sobe a app em `127.0.0.1:8003`, Postgres (pgvector), Redis e a transportadora mock, roda as migrations, popula clientes e pedidos fictícios e indexa as políticas. Com `DEV_TOKEN_ENABLED=true` no `.env`, dá para conversar pela API:
 
 ```sh
 TOKEN=$(curl -s -X POST localhost:8003/auth/dev-token \
@@ -119,166 +172,19 @@ curl -s -X POST localhost:8003/chat -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -d '{"message":"Meu pedido ainda não chegou"}'
 ```
 
-Dev tokens are signed with `JWT_SECRET` and only exist for local use (`DEV_TOKEN_ENABLED=true`; off by default, `/auth/dev-token` answers 404): `{"customer_id": ...}` for a Customer, `{"attendant_id": ...}` for an Attendant (seeded ids above).
-
-Send the returned `conversation_id` to continue the same Conversation. Policy questions ("Qual o prazo para trocar um produto?") are answered from the Knowledge Base, naming the policy; when no policy covers the question the agent says so and offers a Ticket.
-
-### Approving Refunds
-
-An eligible Refund waits for an Attendant. With an Attendant token, list and decide them (a reason is required to reject):
-
-```sh
-ATT=$(curl -s -X POST localhost:8003/auth/dev-token \
-  -H 'content-type: application/json' -d '{"attendant_id":"att_julia"}' | jq -r .access_token)
-curl -s localhost:8003/approvals?status=pending -H "Authorization: Bearer $ATT"
-curl -s -X POST localhost:8003/approvals/<approval_request_id> -H "Authorization: Bearer $ATT" \
-  -H 'content-type: application/json' -d '{"decision":"approve"}'
-```
-
-Approving resumes the paused approval workflow and issues the Refund. The decision is appended to the Conversation; the Customer sees it in `notices` on their next `/chat` (even in a new Conversation) or by polling `GET /conversations/{id}/messages`.
-
-### Logistics scenarios
-
-The mock carrier answers deterministically by tracking code; each seeded Dispatched Order exercises one scenario (`support_agent/logistics_mock.py`):
-
-| Order | Customer | Scenario |
-|---|---|---|
-| ORD-1002 | cus_ana | in transit |
-| ORD-2002 | cus_bruno | delayed |
-| ORD-1001, ORD-3002 | cus_ana, cus_carla | delivered |
-| ORD-1004 | cus_ana | lost |
-| ORD-2004 | cus_bruno | returned |
-| ORD-3003 | cus_carla | timeout |
-| ORD-3004 | cus_carla | carrier 500 |
-| ORD-3005 | cus_carla | carrier 404 |
-
-ORD-1003, ORD-2001 and ORD-3001 are not Dispatched yet (no tracking).
-
-### LLM provider
-
-Anthropic by default (`ANTHROPIC_API_KEY`; Haiku 4.5 classifies, Sonnet 5.5 responds). Any OpenAI-compatible chat completions endpoint works instead (ADR-0004), e.g. the 9router on the VPS with its `arsenal-vps` combo:
-
-```sh
-LLM_PROVIDER=openai_compatible
-LLM_BASE_URL=http://<router-host>:20128/v1   # with /v1
-LLM_API_KEY=...                              # the router's key, if it checks one
-CLASSIFIER_MODEL=arsenal-vps
-RESPONDER_MODEL=arsenal-vps
-LLM_TIMEOUT_SECONDS=180                      # per request; combos can be slow
-```
-
-The JSON the classifier must return is asked for in the prompt and parsed leniently; a reply that doesn't parse is treated as not understood (the agent asks again) and never as a confirmation.
-
-### Tracing (LangSmith)
-
-Off unless set, and always off under Compose: `compose.yaml` is the production project and forces `LANGSMITH_TRACING=false` (and the legacy `LANGSMITH_TRACING_V2` / `LANGCHAIN_TRACING_V2`), since traces carry Customer messages. To trace the containers on a dev machine, put the setting in an untracked `compose.override.yaml` (gitignored; Compose loads it automatically, so never create one on the VPS):
-
-```yaml
-services:
-  app:
-    environment:
-      LANGSMITH_TRACING_V2: "true"   # langsmith reads *_TRACING_V2 before *_TRACING
-```
-
-and the key and project in `.env`, then restart the app:
-
-```sh
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=lsv2_...   # smith.langchain.com → Settings → API Keys
-LANGSMITH_PROJECT=support-agent
-```
-
-Each Customer message is one trace named `conversation_turn` (filter by `conversation_id` in its metadata) with a span per graph node — latency, inputs and outputs — and the Claude calls and tool calls (args and result) as LLM and tool spans inside them. Outside Docker, export the variables (e.g. `uv run --env-file .env ...`): LangSmith reads the process environment, not `.env`.
-
-### Abuse protection
-
-`POST /chat` answers `429` with a pt-BR `detail` and `Retry-After` when a Conversation sends more than `CONVERSATION_TURNS_PER_WINDOW` (10) turns in `CONVERSATION_RATE_WINDOW_SECONDS` (60), or when the LLM calls of the day (UTC, all Customers) reach `LLM_CALLS_PER_DAY` (2000 in the app, 300 under Compose, i.e. in production); the last turn of the day may go a few calls over rather than stop halfway. The body's `code` tells them apart: `conversation_rate_limited` or `llm_cap_exhausted`. Counters live in Redis.
-
-An optional `Idempotency-Key` header makes a retry safe: the same key from the same Customer returns the original turn for `IDEMPOTENCY_TTL_SECONDS` (24 h) without running it again or counting it; the same key with a different body is `422`, and while the first request is still running (up to `IDEMPOTENCY_IN_FLIGHT_TTL_SECONDS`), `409`. A request that fails (including a `429`) frees its key for the retry.
-
-## Deploy
-
-Public at `https://support.matheusramos.dev`, on the VPS next to the other services (rag_api, fraud, newsletter, 9router: never recreate them). Cloudflare proxies the DNS record and terminates public TLS; nginx on the VPS terminates TLS from Cloudflare with an Origin Certificate (no certbot) and proxies to the app on `127.0.0.1:8003`. Postgres, Redis and the logistics mock publish no ports.
-
-1. Cloudflare: `support` A record → the VPS, proxied; SSL mode Full (strict).
-2. Cloudflare → SSL/TLS → Origin Server → Create Certificate for `support.matheusramos.dev`; save as `/etc/nginx/ssl/support.matheusramos.dev.pem` and `.key` (key `chmod 600`).
-3. vhost: `sudo cp deploy/nginx/support.matheusramos.dev /etc/nginx/sites-available/`, `sudo ln -s /etc/nginx/sites-available/support.matheusramos.dev /etc/nginx/sites-enabled/`, `sudo nginx -t && sudo systemctl reload nginx`.
-4. App: `.env` from `.env.example` (strong `JWT_SECRET` and `POSTGRES_PASSWORD`, LLM provider), then `docker compose up -d --build` in this directory (Compose project `support`; touches no other project).
-5. Smoke test: the `curl` from [Run locally](#run-locally) against `https://support.matheusramos.dev`.
-6. Backups: install the timer (below).
-
-**Before any recreate** (`down`, `up --build`, `--force-recreate`, moving this directory): read this section, run `docker diff` on each `support-*` container and keep anything in it that isn't in the image, and run it here only, so Compose acts on the project `support` alone. The `support` project is the only one ever recreated from this repo: never `docker compose` another project's file, `docker system prune` or touch rag_api, fraud, newsletter or 9router containers. `scripts/go-live.sh` checks at the end that no other container changed.
-
-#### Resource limits
-
-The VPS has 2 vCPUs, ~11.6 GiB of RAM and no swap, and the services already there use about 3.5 GiB (rag_api ~1 GiB, fraud's Kafka ~0.5 GiB, ballot_postgres, newsletter and the rest ~100–170 MiB each). An OOM without swap kills whatever the kernel picks, so every `support` service has a hard `mem_limit` and the project as a whole stays under ~1.9 GiB:
-
-| Service | `mem_limit` | `cpus` | Measured (peak) | Why |
-| --- | --- | --- | --- | --- |
-| app | 1280m | 1.0 | ~800 MiB (870 MiB) | fastembed model in memory plus the LangGraph runtime; ~45% headroom over the peak at start-up indexing. One vCPU leaves the other to everything else. |
-| postgres | 384m | 0.5 | ~90 MiB (110 MiB) | Default `shared_buffers` (128 MB) plus a few connections; the data set is small. |
-| redis | 64m | 0.25 | ~6 MiB | Counters, Working State and idempotency keys, all with a TTL; `maxmemory 48mb` with `volatile-ttl` evicts before the container limit is reached. |
-| logistics | 128m | 0.25 | ~40 MiB | A single uvicorn worker. |
-
-`cpus` caps a burst (the app embedding the Knowledge Base, a slow LLM turn) so it can't starve rag_api or fraud; at idle nothing is used. Measure again with `docker stats --no-stream` after a change that adds memory (a bigger embedding model, more workers).
-
-Every service has `restart: unless-stopped` and a healthcheck (`/health` on the app and the mock, `pg_isready`, `redis-cli ping`); `docker compose ps` shows `healthy`. Only the app publishes a port, on `127.0.0.1:8003`.
-
-#### Demo Reset
-
-Every day at 04:00 UTC the Demo Reset rebuilds the demo data from scratch ([ADR-0006](docs/adr/0006-demo-reset-rebuilds-the-database.md)): `python -m support_agent.reset` drops the `public` schema and rebuilds it (migrations, seed, Knowledge Base index, the LangGraph checkpoint tables), ends every other connection to the database (the app's pools check connections on checkout and reconnect; a `psql` or `pg_dump` running then is cut off too) and deletes every Redis key but the LLM budget's, so a reset never hands out a second day of LLM calls. Demo Visitors caught mid-visit get the restart signal. Requests in flight during the rebuild (seconds, mostly embedding the policies) may fail. It runs as a one-off container of the app's image, so before enabling the timer the app must be rebuilt and recreated with this code (`docker compose up -d --build app`, after the checks under *Before any recreate*): the reset needs the new image, and the running app needs the pools that reconnect. A missed run (VPS down at 04:00) is skipped, not caught up at boot in the middle of visits; while it runs it adds ~0.9 GiB (the embedding model) on top of the project's limits.
-
-```sh
-sudo cp deploy/systemd/support-demo-reset.{service,timer} /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now support-demo-reset.timer
-sudo systemctl start support-demo-reset.service && journalctl -u support-demo-reset.service -n 20  # by hand
-```
-
-#### Backups
-
-`scripts/backup-postgres.sh` writes a `pg_dump` (custom format) of the `support` database to `~/ops/backups/support/support-<UTC timestamp>.dump`, checks that `pg_restore` can read it and keeps the newest 14 (`KEEP`). The credentials never leave the container. A systemd timer runs it daily at 04:30 (São Paulo):
-
-```sh
-sudo cp deploy/systemd/support-backup.{service,timer} /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now support-backup.timer
-sudo systemctl start support-backup.service && journalctl -u support-backup.service -n 5  # first run
-```
-
-Restore (the app is stopped so nothing writes during it; `--clean` drops and recreates every object):
-
-```sh
-docker compose stop app
-docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
-  < ~/ops/backups/support/support-<timestamp>.dump
-docker compose start app
-```
-
-To check a dump without touching the live database, restore it into a throwaway one: `createdb -U "$POSTGRES_USER" restore_check` in the container, the same `pg_restore` with `-d restore_check`, then `dropdb`. Redis needs no backup: it only caches what Postgres rebuilds (ADR-0001).
-
-The vhost limits requests per client IP (`limit_req`: `/chat` 12/min with a burst of 6, the rest 5/s), answering `429`. Behind Cloudflare the client is `CF-Connecting-IP`, used as the `limit_req` key and passed on as `X-Real-IP`. It is not set with `real_ip_header`: realip would rewrite the address before nginx checks `conf.d/00-cloudflare-only.conf` (the allowlist that lets only Cloudflare in), and every real client would be denied. Cloudflare overwrites the header, and the allowlist leaves only private/Tailscale networks able to forge it.
-
-## Evaluation
-
-Scripted Conversations run against the real models, one command, run by hand (never in CI):
-
-```sh
-uv run python -m support_agent.evaluation                                 # every dataset
-uv run python -m support_agent.evaluation eval/datasets/order_status.yaml # one dataset
-```
-
-It needs the LLM provider configured (environment or `.env`, see [LLM provider](#llm-provider)) and Docker: it starts throwaway Postgres and Redis containers (or uses `EVAL_DATABASE_URL` / `EVAL_REDIS_URL`, which must be disposable: the run seeds them and writes Conversations and Tickets), seeds them, indexes the Knowledge Base with the real embedding model and drives the app in process through `/chat`, with the logistics mock and the seed's clock (today = 01/09/2026). `--judge-model` picks the judge (default Sonnet 5.5 on Anthropic, the responder model on an OpenAI-compatible endpoint), on the same provider.
-
-- **Datasets** (`eval/datasets/*.yaml`, ~60 Conversations): each Conversation has a seeded Customer, fixed Customer turns and an expected outcome (`resolved | escalated_appropriate | clarification`); each turn may label the expected Intent, tool calls (name + the args that matter) and facts the reply must contain, and may have an Attendant decide the Customer's pending Approval Requests first. Every Conversation starts from the seeded data. Format notes at the top of `order_status.yaml`. Coverage: `order_status` (every logistics scenario above, finding the Order, ownership), `cancellation` (confirm/deny/anything else, Orders that can't be cancelled), `refund` (every Refund Policy branch, amounts, approval and rejection, Refund status), `knowledge_base` (policy hits and misses), `conversation` (multiple Intents, Clarification, small talk, human requested, repeated tool failure).
-- **Metrics**: task completion (expected outcome and every required fact), tool-call accuracy per turn against the gold calls (retries collapsed, order ids in any format), Intent accuracy, p50/p95 latency end to end and per node, hallucination rate (an LLM judge lists reply claims the turn's tool outputs don't support) and escalation rate split into appropriate vs avoidable. Tool calls and node timings come from the turn's trace, recorded in process: no LangSmith account needed and nothing is sent.
-- **Reports**: `eval/reports/<date>-<dataset>.json` and `.md`, with the model ids and commit, plus a ~10% sample of Conversations for a human to check the judge on. A turn whose LLM reply fell back to the facts keeps the raw reply and the checks it failed (`empty`; `markup`: chat-template tokens such as `<|end|>` in the reply; `grounded`: the tokens beyond the facts; `complete`: the required facts not affirmed). Commit them to compare runs over time.
-
-## Develop
+Para desenvolver (testes sem LLM real, com Postgres e Redis em containers descartáveis):
 
 ```sh
 uv sync
-uv run ruff check . && uv run ruff format --check .
-uv run mypy
-uv run pytest
+uv run ruff check . && uv run mypy && uv run pytest
 ```
 
-Tests use Postgres and Redis from `TEST_DATABASE_URL` / `TEST_REDIS_URL` when set (as in CI); otherwise they start throwaway containers via testcontainers (Docker required). Tests never call the real LLM or embedding model: they use a scripted fake LLM and a lexical fake embedder (`tests/fakes.py`) and the logistics mock in-process.
+Mais em [docs/development.md](docs/development.md) (aprovação de reembolsos, cenários da transportadora, provedores de LLM, tracing, limites, avaliação) e [docs/deploy.md](docs/deploy.md) (deploy, limites de recursos, reset diário, backups).
+
+## Stack
+
+Python 3.12 · FastAPI · LangGraph · Anthropic API / OpenAI-compatível · PostgreSQL 17 + pgvector · fastembed · Redis · SQLAlchemy + Alembic · Docker Compose · nginx + Cloudflare (Turnstile) · pytest + testcontainers · uv, ruff, mypy · front-end em HTML/CSS/JS sem build
+
+## Licença
+
+[MIT](LICENSE)

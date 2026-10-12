@@ -1,7 +1,7 @@
 name: support
 
-# Shares a 2 vCPU / no-swap VPS with rag_api, fraud, newsletter and 9router: every service has a
-# memory and CPU limit, sized in README → Deploy → Resource limits.
+# Shares a small no-swap VPS with other production services: every service has a
+# memory and CPU limit, sized in docs/deploy.md → Resource limits.
 
 x-python-healthcheck: &python-healthcheck
   interval: 30s
@@ -17,7 +17,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       LOGISTICS_URL: http://logistics:8080
-      # Production: no LangSmith traces (they'd carry Customer messages). See README → Tracing.
+      # Production: no LangSmith traces (they'd carry Customer messages). See docs/development.md → Tracing.
       LANGSMITH_TRACING: "false"
       LANGSMITH_TRACING_V2: "false"
       LANGCHAIN_TRACING_V2: "false"

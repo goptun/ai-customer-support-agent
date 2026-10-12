@@ -16,7 +16,7 @@ from support_agent.seed import ANCHOR, seed
 
 from .fakes import KNOWLEDGE_MIN_SCORE, FakeTurnstile, LexicalEmbedder, ScriptedLLM
 
-TEST_JWT_SECRET = "test-secret-with-enough-length-for-hs256"
+TEST_JWT_SECRET = "test-secret-with-enough-length-for-hs256"  # gitleaks:allow (test-only fixture)
 TEST_TURNSTILE_SITE_KEY = "test-site-key"
 
 

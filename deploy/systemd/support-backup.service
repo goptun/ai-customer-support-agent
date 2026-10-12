@@ -1,4 +1,4 @@
-# Started by support-backup.timer. Install: README → Deploy → Backups.
+# Started by support-backup.timer. Install: docs/deploy.md → Backups.
 [Unit]
 Description=ai-customer-support-agent: Postgres dump to ~/ops/backups/support
 Wants=network-online.target
