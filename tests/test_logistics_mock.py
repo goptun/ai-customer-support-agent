@@ -69,3 +69,13 @@ async def test_demo_codes_track_from_the_dispatch_date_they_carry(
 async def test_malformed_demo_code_is_unknown() -> None:
     with pytest.raises(TrackingNotFound):
         await client().track("DEMO-TRANSIT-2026130-1")
+
+
+async def test_health_answers() -> None:
+    async with httpx.AsyncClient(
+        base_url="http://logistics.test", transport=httpx.ASGITransport(app=create_app())
+    ) as http:
+        response = await http.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

@@ -294,6 +294,11 @@ def create_app(
             access_token=issue_token(principal, settings.jwt_secret, settings.jwt_ttl_seconds)
         )
 
+    # Liveness for the Compose healthcheck.
+    @app.get("/health", include_in_schema=False)
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.get("/demo/config")
     async def demo_config() -> DemoConfig:
         return DemoConfig(turnstile_site_key=settings.turnstile_site_key)
