@@ -28,12 +28,30 @@ const statusEl = document.getElementById('status');
 const turnstileEl = document.getElementById('turnstile');
 const unavailableEl = document.getElementById('unavailable');
 const replayAgainBtn = document.getElementById('replay-again');
+const attendantEl = document.getElementById('attendant');
+const approvalsEl = document.getElementById('approvals');
+const ticketsEl = document.getElementById('tickets');
+
+const GROUND_LABELS = {
+  delivered_recently: 'entregue dentro do prazo de devolução',
+  shipment_lost: 'extravio confirmado pela transportadora',
+  late: 'entrega muito atrasada',
+};
+
+const TICKET_REASONS = {
+  customer_requested: 'Cliente pediu atendimento humano',
+  tool_failure: 'Falha repetida de um sistema',
+  clarification_failed: 'O agente não entendeu o pedido',
+};
+
+const PRIORITY_LABELS = { low: 'baixa', normal: 'normal', high: 'alta' };
 
 const RESTARTED = 'A demo foi reiniciada: você recebeu um novo cliente com outros pedidos.';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const day = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+const moment = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 let visitor = null; // { token, expiresAt, conversationId }
 let busy = false;
@@ -82,6 +100,10 @@ function setReady(ready) {
   sendBtn.disabled = !enabled;
   newConversationBtn.disabled = !enabled;
   chipsEl.querySelectorAll('button').forEach((chip) => { chip.disabled = !enabled; });
+  approvalsEl.querySelectorAll('.approval').forEach((card) => {
+    card.querySelector('.approve').disabled = !enabled;
+    card.querySelector('.reject').disabled = !enabled || !card.querySelector('textarea').value.trim();
+  });
 }
 
 function addMessage(kind, text) {
@@ -155,6 +177,88 @@ function renderChips(orders) {
   });
 }
 
+function element(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+function policyText(approval) {
+  const policy = approval.policy_result || {};
+  const ground = GROUND_LABELS[policy.ground] || policy.ground;
+  const max = money.format((policy.max_cents || 0) / 100);
+  const capped = policy.capped ? ' — o cliente pediu mais e o valor foi limitado' : '';
+  return `Política de Reembolso: elegível (${ground}), até ${max}${capped}.`;
+}
+
+function renderApprovals(approvals) {
+  approvalsEl.replaceChildren();
+  if (!approvals.length) {
+    approvalsEl.appendChild(element('li', 'placeholder', 'Nenhum reembolso aguardando decisão.'));
+    return;
+  }
+  approvals.forEach((approval) => {
+    const card = element('li', 'card approval');
+    const head = element('div', 'card-head');
+    head.append(
+      element('span', 'order-id', approval.order_id),
+      element('span', 'card-amount', money.format(approval.amount_cents / 100)),
+    );
+    const reason = element('p', 'card-text', `Motivo do cliente: “${approval.refund_reason}”`);
+    const policy = element('p', 'card-meta', policyText(approval));
+
+    const fieldId = `reason-${approval.approval_request_id}`;
+    const label = element('label', 'card-label', 'Motivo (obrigatório para rejeitar)');
+    label.htmlFor = fieldId;
+    const field = element('textarea');
+    field.id = fieldId;
+    field.rows = 2;
+    field.maxLength = 1000;
+    const actions = element('div', 'card-actions');
+    const approve = element('button', 'approve', 'Aprovar');
+    approve.type = 'button';
+    const reject = element('button', 'ghost reject', 'Rejeitar');
+    reject.type = 'button';
+    reject.disabled = true;
+    const feedback = element('p', 'card-error');
+    feedback.setAttribute('role', 'alert');
+    actions.append(approve, reject);
+
+    field.addEventListener('input', () => {
+      reject.disabled = busy || !field.value.trim();
+    });
+    approve.addEventListener('click', () => decide(approval, 'approve', null, feedback));
+    reject.addEventListener('click', () => decide(approval, 'reject', field.value, feedback));
+
+    card.append(head, reason, policy, label, field, actions, feedback);
+    approvalsEl.appendChild(card);
+  });
+}
+
+function renderTickets(tickets) {
+  ticketsEl.replaceChildren();
+  if (!tickets.length) {
+    ticketsEl.appendChild(element('li', 'placeholder', 'Nenhum ticket aberto.'));
+    return;
+  }
+  tickets.forEach((ticket) => {
+    const card = element('li', 'card');
+    const head = element('div', 'card-head');
+    head.append(
+      element('span', 'order-id', `Ticket #${ticket.ticket_id}`),
+      element('span', `order-status is-priority-${ticket.priority}`, `Prioridade ${PRIORITY_LABELS[ticket.priority] || ticket.priority}`),
+    );
+    const order = ticket.order_id ? ` · pedido ${ticket.order_id}` : '';
+    card.append(
+      head,
+      element('p', 'card-text', TICKET_REASONS[ticket.reason] || ticket.reason),
+      element('p', 'card-meta', `Aberto em ${moment.format(new Date(ticket.created_at))}${order}`),
+    );
+    ticketsEl.appendChild(card);
+  });
+}
+
 function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (visitor) headers.Authorization = `Bearer ${visitor.token}`;
@@ -171,6 +275,61 @@ async function refreshOrders() {
   renderOrders(orders);
   renderChips(orders);
   return true;
+}
+
+// Whether the visitor is still admitted, as for refreshOrders.
+async function refreshAttendant() {
+  const [approvals, tickets] = await Promise.all([api('approvals'), api('tickets')]);
+  if (approvals.status === 401 || tickets.status === 401) return false;
+  if (approvals.ok) renderApprovals(await approvals.json());
+  if (tickets.ok) renderTickets(await tickets.json());
+  attendantEl.hidden = false;
+  setReady(!!visitor && !replaying);
+  return true;
+}
+
+function showAttendant() {
+  refreshAttendant().then((admitted) => { if (!admitted) startOver(RESTARTED); }).catch(() => {});
+}
+
+async function decide(approval, decision, reason, feedback) {
+  if (busy || !visitor) return;
+  busy = true;
+  setReady(false);
+  feedback.textContent = '';
+  try {
+    const response = await api(`approvals/${approval.approval_request_id}`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, reason }),
+    });
+    if (response.status === 401) {
+      busy = false;
+      await startOver(RESTARTED);
+      return;
+    }
+    if (response.status === 422) {
+      feedback.textContent = 'Informe o motivo para rejeitar.';
+      return;
+    }
+    if (!response.ok && response.status !== 404 && response.status !== 409) {
+      feedback.textContent = 'Não foi possível registrar a decisão. Tente de novo.';
+      return;
+    }
+    // The decision is relayed to the Conversation the Refund was asked in.
+    if (visitor.conversationId) {
+      resetConversation();
+      await restoreConversation();
+    }
+    setStatus(response.ok
+      ? 'Decisão registrada pelo atendente e enviada ao cliente na conversa.'
+      : 'Esse reembolso já tinha sido decidido.');
+    await refreshAttendant();
+  } catch (_) {
+    feedback.textContent = 'Sem conexão com o servidor. Tente de novo.';
+  } finally {
+    busy = false;
+    if (visitor && !replaying) setReady(true);
+  }
 }
 
 async function restoreConversation() {
@@ -260,11 +419,13 @@ async function onVerified(turnstileToken) {
   pendingNotice = null;
   setStatus('');
   setReady(true);
+  showAttendant();
 }
 
 async function startOver(notice) {
   visitor = null;
   saveVisitor();
+  attendantEl.hidden = true;
   await admit(notice);
 }
 
@@ -319,8 +480,10 @@ async function send(text) {
     saveVisitor();
     turn.notices.forEach((notice) => addMessage('notice', notice));
     addMessage('agent', turn.reply);
-    // A Cancellation changes an Order's status.
-    refreshOrders().then((admitted) => { if (!admitted) startOver(RESTARTED); }).catch(() => {});
+    // A Cancellation changes an Order's status; a Refund or an escalation reaches the Attendant.
+    Promise.all([refreshOrders(), refreshAttendant()])
+      .then((admitted) => { if (admitted.includes(false)) startOver(RESTARTED); })
+      .catch(() => {});
   } catch (_) {
     typing.remove();
     addMessage('error', 'Sem conexão com o servidor. Tente de novo.');
@@ -373,6 +536,7 @@ async function startReplay() {
   composerEl.hidden = true;
   newConversationBtn.hidden = true;
   unavailableEl.hidden = false;
+  attendantEl.hidden = true;
   setStatus('');
   try {
     replay = replay || await (await fetch('replay.json')).json();
@@ -428,6 +592,7 @@ async function start() {
       await restoreConversation();
       setStatus('');
       setReady(true);
+      showAttendant();
       return;
     }
     await startOver(admitted === false ? RESTARTED : null);
