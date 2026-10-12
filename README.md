@@ -156,7 +156,7 @@ Os relatórios também trazem latência p50/p95 de ponta a ponta e por nó, e um
 
 ## Como rodar localmente
 
-Requer Docker e uma chave de LLM (Anthropic ou um endpoint OpenAI-compatível).
+Requer Docker, `jq` (para os exemplos) e uma chave de LLM (Anthropic ou um endpoint OpenAI-compatível).
 
 ```sh
 cp .env.example .env   # defina POSTGRES_PASSWORD, JWT_SECRET e o provedor de LLM

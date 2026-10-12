@@ -1,6 +1,6 @@
 """The OpenAI-compatible provider (e.g. a router), against a fake endpoint at the HTTP layer.
 
-Combos route to models of varying discipline, so replies may wrap the JSON in a code fence or
+Routed models vary in discipline, so replies may wrap the JSON in a code fence or
 prose, or open with a reasoning block; anything unparseable takes the same safe fallback as
 with Anthropic.
 """
@@ -215,7 +215,7 @@ def settings(**overrides: Any) -> Settings:
 def test_the_provider_is_chosen_by_configuration() -> None:
     assert isinstance(build_llm(settings(anthropic_api_key=SecretStr("k"))), AnthropicLLM)
     openai_compatible = build_llm(
-        settings(llm_provider="openai_compatible", llm_base_url="http://router:20128/v1")
+        settings(llm_provider="openai_compatible", llm_base_url="http://router:8080/v1")
     )
     assert isinstance(openai_compatible, OpenAICompatibleLLM)
 
@@ -230,7 +230,7 @@ def test_each_provider_needs_its_endpoint_configured() -> None:
 def test_slow_endpoints_get_the_configured_timeout() -> None:
     # Combos answer in tens of seconds; a reasoning model can take minutes.
     client = openai_client(
-        settings(llm_base_url="http://router:20128/v1", llm_timeout_seconds=300.0)
+        settings(llm_base_url="http://router:8080/v1", llm_timeout_seconds=300.0)
     )
 
     assert client.timeout == 300.0
