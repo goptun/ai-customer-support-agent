@@ -102,10 +102,7 @@ def test_a_status_named_only_to_deny_it_is_not_stated() -> None:
 def test_a_required_wording_inside_another_word_is_not_stated(
     reply: str, unaffirmed: list[list[str]]
 ) -> None:
-    reason = fallback_reason(reply, FACTS)
-
-    assert reason is not None
-    assert reason.unaffirmed == unaffirmed
+    assert fallback_reason(reply, FACTS) == FallbackReason(unaffirmed=unaffirmed)
 
 
 def test_a_required_stem_inside_another_word_is_not_stated() -> None:
@@ -115,5 +112,6 @@ def test_a_required_stem_inside_another_word_is_not_stated() -> None:
         required=frozenset({frozenset({"extraviad", "extravio"})}),
     )
 
-    assert fallback_reason("Seu pedido foi reextraviado.", facts) is not None
-    assert fallback_reason("Seu pedido foi extraviado.", facts) is None
+    reason = fallback_reason("Seu pedido foi reextraviado.", facts)
+
+    assert reason == FallbackReason(unaffirmed=[["extraviad", "extravio"]])

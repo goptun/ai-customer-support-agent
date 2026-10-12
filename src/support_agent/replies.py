@@ -472,13 +472,13 @@ _CLAUSE_WIDE = frozenset().union(*_WONT_ARRIVE.values())
 def _affirms(folded_reply: str, wording: str) -> bool:
     """True if the reply says the wording somewhere without negating it.
 
-    The wording must start a word, so a stem ("extraviad") or a code doesn't match inside
-    another word (#53).
+    The wording must start a word, so a stem ("extraviad") or a code doesn't match in the
+    middle of another word (#53).
     """
     negated = _NEGATED_IN_CLAUSE if wording in _CLAUSE_WIDE else _NEGATED
     return any(
         not negated.search(folded_reply, 0, match.start())
-        for match in re.finditer(rf"\b{re.escape(wording.casefold())}", folded_reply)
+        for match in re.finditer(rf"(?<!\w){re.escape(wording.casefold())}", folded_reply)
     )
 
 
