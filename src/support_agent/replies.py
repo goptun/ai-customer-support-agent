@@ -447,10 +447,13 @@ def _ungrounded(reply: str, facts: Facts) -> list[str]:
         for match in pattern.finditer(reply)
         if match.group().casefold() not in folded_text
     ]
+    # A status named only to deny it ("ainda não foi enviado") isn't one the reply states.
+    folded_reply = reply.casefold()
     beyond += [
         match
         for match in _STATUS_WORDS.finditer(reply)
         if match.group().casefold() not in folded_statuses
+        and not _NEGATED.search(folded_reply, 0, match.start())
     ]
     ordered = sorted(beyond, key=lambda match: match.start())
     return list(dict.fromkeys(match.group() for match in ordered))

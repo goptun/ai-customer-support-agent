@@ -54,3 +54,13 @@ def test_an_empty_reply_falls_back() -> None:
 
     assert reason == FallbackReason(empty=True)
     assert reason.checks == ["empty"]
+
+
+def test_a_status_named_only_to_deny_it_is_not_stated() -> None:
+    facts = Facts(
+        text="Pedido ORD-1003: em separação.\nPrevisão de entrega: 08/09/2026.",
+        statuses=frozenset({"em separação"}),
+    )
+    reply = "Seu pedido está em separação e ainda não foi enviado à transportadora."
+
+    assert fallback_reason(reply, facts) is None
