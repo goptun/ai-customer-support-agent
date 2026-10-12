@@ -7,13 +7,15 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from support_agent.auth import Principal, Role, issue_token
 from support_agent.config import Settings
 from support_agent.db import session_factory
 from support_agent.models import Attendant, Customer
+from support_agent.seed import ORDERS
 
 from .conftest import TEST_JWT_SECRET, TEST_TURNSTILE_SITE_KEY, app_client
 from .fakes import FakeTurnstile, ScriptedLLM, order_status, refund
-from .test_api import chat
+from .test_api import ANA, chat
 from .test_refund_tools import approval_requests_of
 
 
@@ -51,6 +53,7 @@ async def test_admission_creates_a_customer_with_the_templated_orders(
 
     assert visitor["token_type"] == "bearer"
     assert visitor["expires_in"] == 7200
+    assert visitor["llm_cap_exhausted"] is False
     claims = claims_of(visitor)
     assert claims["role"] == "customer"
     assert claims["exp"] - claims["iat"] == 7200
@@ -142,6 +145,62 @@ async def test_visitor_cannot_reach_another_visitors_conversations_or_orders(
     assert posted.status_code == 404
     assert f"Não encontrei o pedido {owners_order}" in str(asked["reply"])
     assert {o["order_id"] for o in listed.json()} == {o["order_id"] for o in intruder["orders"]}
+
+
+def restart_signal(response: Any) -> bool:
+    return bool(response.status_code == 401 and response.json().get("code") == "demo_restart")
+
+
+async def test_an_expired_visitor_token_gets_the_restart_signal(client: AsyncClient) -> None:
+    claims = claims_of(await admitted(client))
+    principal = Principal(claims["sub"], Role.CUSTOMER, attendant_id=claims["attendant"])
+    expired = {"Authorization": f"Bearer {issue_token(principal, TEST_JWT_SECRET, -60)}"}
+
+    orders = await client.get("/orders", headers=expired)
+    posted = await client.post("/chat", json={"message": "oi"}, headers=expired)
+
+    assert restart_signal(orders)
+    assert restart_signal(posted)
+
+
+async def test_a_token_whose_customer_is_gone_gets_the_restart_signal(
+    client: AsyncClient,
+) -> None:
+    # As after a Demo Reset: the token is still valid, its Customer no longer exists.
+    gone = Principal("demo_gone", Role.CUSTOMER, attendant_id="demo_att_gone")
+    headers = {"Authorization": f"Bearer {issue_token(gone, TEST_JWT_SECRET, 600)}"}
+
+    orders = await client.get("/orders", headers=headers)
+    posted = await client.post("/chat", json={"message": "oi"}, headers=headers)
+
+    assert restart_signal(orders)
+    assert restart_signal(posted)
+
+
+async def test_an_expired_token_that_is_not_a_visitors_is_a_plain_401(
+    client: AsyncClient,
+) -> None:
+    expired = issue_token(Principal(ANA, Role.CUSTOMER), TEST_JWT_SECRET, -60)
+
+    response = await client.get("/orders", headers={"Authorization": f"Bearer {expired}"})
+
+    assert response.status_code == 401
+    assert "code" not in response.json()
+
+
+async def test_the_replay_is_a_recorded_conversation_about_seeded_orders(
+    client: AsyncClient,
+) -> None:
+    replay = await client.get("/replay.json")
+
+    assert replay.status_code == 200
+    body = replay.json()
+    seeded = {o["id"] for o in ORDERS if o["customer_id"] == ANA}
+    assert {o["order_id"] for o in body["orders"]} == seeded
+    assert body["turns"]
+    for turn in body["turns"]:
+        assert turn["message"] and turn["reply"]
+        assert isinstance(turn["notices"], list)
 
 
 async def test_orders_lists_the_visitors_orders_again(client: AsyncClient) -> None:

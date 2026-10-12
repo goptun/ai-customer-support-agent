@@ -49,9 +49,12 @@ class LLMBudget:
         self._redis = redis
         self._cap = calls_per_day
 
+    async def exhausted(self) -> bool:
+        return int(await self._redis.get(self.key(datetime.now(UTC).date())) or 0) >= self._cap
+
     async def check(self) -> None:
-        now = datetime.now(UTC)
-        if int(await self._redis.get(self.key(now.date())) or 0) >= self._cap:
+        if await self.exhausted():
+            now = datetime.now(UTC)
             midnight = datetime.combine(now.date() + timedelta(days=1), time(), UTC)
             raise RateLimited(max(1, int((midnight - now).total_seconds())))
 

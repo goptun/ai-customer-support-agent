@@ -15,6 +15,7 @@ from support_agent.limits import Idempotency, IdempotencyKeyInFlight, LLMBudget
 from .conftest import app_client
 from .fakes import ScriptedLLM
 from .test_api import ANA, BRUNO, chat, stored_messages, token_for
+from .test_demo_api import admitted, bearer
 
 
 @pytest.fixture
@@ -39,6 +40,7 @@ async def test_a_conversation_over_its_rate_limit_gets_a_friendly_429(
         other_conversation = await chat(client, headers, "outra conversa")
 
     assert over.status_code == 429
+    assert over.json()["code"] == "conversation_rate_limited"
     assert "Você enviou muitas mensagens" in over.json()["detail"]
     assert 0 < int(over.headers["Retry-After"]) <= limited.conversation_rate_window_seconds
     assert other_conversation["reply"]
@@ -59,10 +61,26 @@ async def test_over_the_daily_llm_cap_no_turn_runs_until_the_next_day(
         over = await client.post("/chat", json={"message": "mais uma"}, headers=headers)
 
     assert over.status_code == 429
+    assert over.json()["code"] == "llm_cap_exhausted"
     assert "limite diário" in over.json()["detail"]
     assert 0 < int(over.headers["Retry-After"]) <= 24 * 3600
     assert int(await redis.get(key) or 0) >= 1
     assert await redis.ttl(key) > 0
+
+
+async def test_admission_says_up_front_whether_the_daily_llm_cap_is_exhausted(
+    settings: Settings, engine: AsyncEngine, llm: ScriptedLLM, redis: Redis
+) -> None:
+    key = LLMBudget.key(datetime.now(UTC).date())
+    await redis.delete(key)
+    capped = settings.model_copy(update={"llm_calls_per_day": 1})
+    async with app_client(capped, llm) as client:
+        before = await admitted(client)
+        await chat(client, bearer(before), "primeira do dia")
+        after = await admitted(client)
+
+    assert before["llm_cap_exhausted"] is False
+    assert after["llm_cap_exhausted"] is True
 
 
 async def test_a_retry_with_the_same_idempotency_key_returns_the_original_turn(
