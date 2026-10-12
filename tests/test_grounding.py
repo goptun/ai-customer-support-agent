@@ -82,3 +82,38 @@ def test_a_status_named_only_to_deny_it_is_not_stated() -> None:
     reply = "Seu pedido está em separação e ainda não foi enviado à transportadora."
 
     assert fallback_reason(reply, facts) is None
+
+
+@pytest.mark.parametrize(
+    ("reply", "unaffirmed"),
+    [
+        pytest.param(
+            "Seu pedido foi enviado (rastreio XBR100000002) e chega em 03/09/2026.",
+            [["BR100000002"]],
+            id="tracking_code_inside_another_code",
+        ),
+        pytest.param(
+            "Seu pedido foi enviado (rastreio BR100000002) e chega em 103/09/2026.",
+            [["03/09/2026"]],
+            id="date_inside_another_number",
+        ),
+    ],
+)
+def test_a_required_wording_inside_another_word_is_not_stated(
+    reply: str, unaffirmed: list[list[str]]
+) -> None:
+    reason = fallback_reason(reply, FACTS)
+
+    assert reason is not None
+    assert reason.unaffirmed == unaffirmed
+
+
+def test_a_required_stem_inside_another_word_is_not_stated() -> None:
+    facts = Facts(
+        text="Pedido ORD-1004: enviado.\nSituação na transportadora: extraviado.",
+        statuses=frozenset({"enviado", "extraviado"}),
+        required=frozenset({frozenset({"extraviad", "extravio"})}),
+    )
+
+    assert fallback_reason("Seu pedido foi reextraviado.", facts) is not None
+    assert fallback_reason("Seu pedido foi extraviado.", facts) is None
