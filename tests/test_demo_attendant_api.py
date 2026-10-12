@@ -36,12 +36,13 @@ async def test_visitor_lists_only_their_own_customers_approval_requests(
     client: AsyncClient, llm: ScriptedLLM
 ) -> None:
     visitor, other = await admitted(client), await admitted(client)
-    order_id, _ = await refund_asked(client, llm, visitor)
+    order_id, conversation_id = await refund_asked(client, llm, visitor)
     others_order, _ = await refund_asked(client, llm, other)
 
     [listed] = await pending_of(client, bearer(visitor))
 
     assert listed["order_id"] == order_id
+    assert listed["conversation_id"] == conversation_id
     assert listed["customer_id"] == claims_of(visitor)["sub"]
     assert listed["amount_cents"] == 5000
     assert listed["policy_result"]["ground"] == "delivered_recently"

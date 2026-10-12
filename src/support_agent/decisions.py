@@ -51,6 +51,7 @@ class ApprovalRequestView(BaseModel):
     status: ApprovalStatus
     order_id: str
     customer_id: str
+    conversation_id: uuid.UUID  # the one the Refund was asked in, where the decision is relayed
     refund_id: int
     amount_cents: int
     refund_reason: str  # the Customer's
@@ -269,6 +270,7 @@ def _view(approval: ApprovalRequest, refund: Refund) -> ApprovalRequestView:
         status=approval.status,
         order_id=approval.order_id,
         customer_id=approval.customer_id,
+        conversation_id=approval.conversation_id,
         refund_id=refund.id,
         amount_cents=refund.amount_cents,
         refund_reason=refund.reason,

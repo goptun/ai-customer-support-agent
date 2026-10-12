@@ -38,7 +38,7 @@ const GROUND_LABELS = {
   late: 'entrega muito atrasada',
 };
 
-const TICKET_REASONS = {
+const REASON_LABELS = {
   customer_requested: 'Cliente pediu atendimento humano',
   tool_failure: 'Falha repetida de um sistema',
   clarification_failed: 'O agente não entendeu o pedido',
@@ -51,7 +51,7 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const day = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
-const moment = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const dateTime = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 let visitor = null; // { token, expiresAt, conversationId }
 let busy = false;
@@ -193,6 +193,9 @@ function policyText(approval) {
 }
 
 function renderApprovals(approvals) {
+  // A re-render after a chat turn mustn't lose a reason being typed.
+  const typed = new Map();
+  approvalsEl.querySelectorAll('.approval textarea').forEach((field) => typed.set(field.id, field.value));
   approvalsEl.replaceChildren();
   if (!approvals.length) {
     approvalsEl.appendChild(element('li', 'placeholder', 'Nenhum reembolso aguardando decisão.'));
@@ -215,12 +218,13 @@ function renderApprovals(approvals) {
     field.id = fieldId;
     field.rows = 2;
     field.maxLength = 1000;
+    field.value = typed.get(fieldId) || '';
     const actions = element('div', 'card-actions');
     const approve = element('button', 'approve', 'Aprovar');
     approve.type = 'button';
     const reject = element('button', 'ghost reject', 'Rejeitar');
     reject.type = 'button';
-    reject.disabled = true;
+    reject.disabled = busy || !field.value.trim();
     const feedback = element('p', 'card-error');
     feedback.setAttribute('role', 'alert');
     actions.append(approve, reject);
@@ -252,8 +256,8 @@ function renderTickets(tickets) {
     const order = ticket.order_id ? ` · pedido ${ticket.order_id}` : '';
     card.append(
       head,
-      element('p', 'card-text', TICKET_REASONS[ticket.reason] || ticket.reason),
-      element('p', 'card-meta', `Aberto em ${moment.format(new Date(ticket.created_at))}${order}`),
+      element('p', 'card-text', REASON_LABELS[ticket.reason] || ticket.reason),
+      element('p', 'card-meta', `Aberto em ${dateTime.format(new Date(ticket.created_at))}${order}`),
     );
     ticketsEl.appendChild(card);
   });
@@ -279,7 +283,9 @@ async function refreshOrders() {
 
 // Whether the visitor is still admitted, as for refreshOrders.
 async function refreshAttendant() {
+  const asked = visitor;
   const [approvals, tickets] = await Promise.all([api('approvals'), api('tickets')]);
+  if (visitor !== asked || replaying) return true; // restarted or replaying meanwhile: stale
   if (approvals.status === 401 || tickets.status === 401) return false;
   if (approvals.ok) renderApprovals(await approvals.json());
   if (tickets.ok) renderTickets(await tickets.json());
@@ -311,18 +317,26 @@ async function decide(approval, decision, reason, feedback) {
       feedback.textContent = 'Informe o motivo para rejeitar.';
       return;
     }
-    if (!response.ok && response.status !== 404 && response.status !== 409) {
+    if (response.status === 404 || response.status === 409) {
+      setStatus(response.status === 409
+        ? 'Esse reembolso já tinha sido decidido.'
+        : 'Esse reembolso não está mais disponível.');
+      await refreshAttendant();
+      return;
+    }
+    if (!response.ok) {
       feedback.textContent = 'Não foi possível registrar a decisão. Tente de novo.';
       return;
     }
     // The decision is relayed to the Conversation the Refund was asked in.
-    if (visitor.conversationId) {
+    const here = visitor.conversationId === approval.conversation_id;
+    if (here) {
       resetConversation();
       await restoreConversation();
     }
-    setStatus(response.ok
+    setStatus(here
       ? 'Decisão registrada pelo atendente e enviada ao cliente na conversa.'
-      : 'Esse reembolso já tinha sido decidido.');
+      : 'Decisão registrada pelo atendente; o cliente a verá na próxima mensagem.');
     await refreshAttendant();
   } catch (_) {
     feedback.textContent = 'Sem conexão com o servidor. Tente de novo.';
@@ -480,7 +494,7 @@ async function send(text) {
     saveVisitor();
     turn.notices.forEach((notice) => addMessage('notice', notice));
     addMessage('agent', turn.reply);
-    // A Cancellation changes an Order's status; a Refund or an escalation reaches the Attendant.
+    // A Cancellation changes an Order's status; a Refund or a Ticket reaches the Attendant.
     Promise.all([refreshOrders(), refreshAttendant()])
       .then((admitted) => { if (admitted.includes(false)) startOver(RESTARTED); })
       .catch(() => {});
