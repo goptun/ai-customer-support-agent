@@ -115,3 +115,15 @@ def test_a_required_stem_inside_another_word_is_not_stated() -> None:
     reason = fallback_reason("Seu pedido foi reextraviado.", facts)
 
     assert reason == FallbackReason(unaffirmed=[["extraviad", "extravio"]])
+
+
+@pytest.mark.parametrize("space", ["\u00a0", "\u202f"], ids=["no_break", "narrow_no_break"])
+def test_a_fact_written_with_a_unicode_space_is_grounded(space: str) -> None:
+    facts = Facts(
+        text=f"{FACTS.text}\nAtraso: 2 dias. Frete: R$ 10,00.",
+        statuses=FACTS.statuses,
+        required=FACTS.required,
+    )
+    reply = f"{COMPLETE} São 2{space}dias de atraso, e o frete foi R${space}10,00."
+
+    assert fallback_reason(reply, facts) is None

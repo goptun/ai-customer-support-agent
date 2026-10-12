@@ -521,12 +521,18 @@ class FallbackReason(BaseModel):
         return [check for check, failing in failed.items() if failing]
 
 
+# The Unicode spaces other than " " (category Zs). A model may write "2 dias" or "R$ 10,00"
+# with a no-break space, and the facts always use a plain one (#65).
+_UNICODE_SPACE = re.compile(r"[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]")
+
+
 def fallback_reason(reply: str, facts: Facts) -> FallbackReason | None:
     """Why the reply can't be used, or None if it is grounded and complete."""
     if not reply.strip():
         return FallbackReason(empty=True)
     if _CHAT_TEMPLATE_MARKUP.search(reply):
         return FallbackReason(markup=True)
+    reply = _UNICODE_SPACE.sub(" ", reply)
     ungrounded, unaffirmed = _ungrounded(reply, facts), _unaffirmed(reply, facts)
     if ungrounded or unaffirmed:
         return FallbackReason(ungrounded=ungrounded, unaffirmed=unaffirmed)
