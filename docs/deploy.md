@@ -1,19 +1,24 @@
 # Deploy
 
-Public at `https://support.matheusramos.dev`, on a VPS shared with other production services. Cloudflare proxies the DNS record and terminates public TLS; nginx on the VPS terminates TLS from Cloudflare with an Origin Certificate (no certbot) and proxies to the app on `127.0.0.1:8003`. Postgres, Redis and the logistics mock publish no ports.
+Public at `https://matheusramos.dev/projects/support/`, next to the other portfolio demos, on a VPS shared with other production services. Cloudflare proxies the DNS record and terminates public TLS; nginx on the VPS terminates TLS from Cloudflare with an Origin Certificate and, in the main site's vhost, strips the `/projects/support/` prefix and proxies to the app on `127.0.0.1:8003`. Postgres, Redis and the logistics mock publish no ports. The old `https://support.matheusramos.dev` answers 301 to the new path.
 
-1. Cloudflare: `support` A record → the VPS, proxied; SSL mode Full (strict).
-2. Cloudflare → SSL/TLS → Origin Server → Create Certificate for `support.matheusramos.dev`; save as `/etc/nginx/ssl/support.matheusramos.dev.pem` and `.key` (key `chmod 600`).
-3. vhost: `sudo cp deploy/nginx/support.matheusramos.dev /etc/nginx/sites-available/`, `sudo ln -s /etc/nginx/sites-available/support.matheusramos.dev /etc/nginx/sites-enabled/`, `sudo nginx -t && sudo systemctl reload nginx`.
-4. App: `.env` from `.env.example` (strong `JWT_SECRET` and `POSTGRES_PASSWORD`, LLM provider), then `docker compose up -d --build` in this directory (Compose project `support`; touches no other project).
-5. Smoke test: the `curl` from [Run locally](development.md#run-locally) against `https://support.matheusramos.dev`.
-6. Backups: install the timer (below).
+1. Cloudflare → Turnstile: a widget for `matheusramos.dev` (mode Invisible); its site key and secret go in `.env` (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`), nowhere else. Set a monthly spend limit on the LLM provider's account: the daily cap (`LLM_CALLS_PER_DAY`) bounds calls, not money.
+2. App: `.env` from `.env.example` (strong `JWT_SECRET` and `POSTGRES_PASSWORD`, LLM provider, `ROOT_PATH=/projects/support`, `DEV_TOKEN_ENABLED` unset), then `docker compose up -d --build` in this directory (Compose project `support`; touches no other project; see *Before any recreate*).
+3. Old subdomain: `sudo cp deploy/nginx/support.matheusramos.dev /etc/nginx/sites-available/` (enabled in `sites-enabled`), `sudo nginx -t && sudo systemctl reload nginx`. It now only redirects, but still needs its proxied `support` A record and its Origin Certificate in `/etc/nginx/ssl/support.matheusramos.dev.{pem,key}` (Cloudflare → SSL/TLS → Origin Server → Create Certificate for that name, key `chmod 600`; SSL mode Full (strict)). It goes before step 4: it no longer defines the rate-limit zones, and two files defining them fail `nginx -t`.
+4. Main vhost: the config of `matheusramos.dev` lives in the `portfolio-website` repository (`infra/nginx/matheusramos.dev.conf`), which is what gets copied to the VPS. Paste [`deploy/nginx/support-limits.conf`](../deploy/nginx/support-limits.conf) at the top of that file (http context, outside every `server`) and [`deploy/nginx/support-location.conf`](../deploy/nginx/support-location.conf) inside the `server_name matheusramos.dev` HTTPS block, then deploy it as `portfolio-website/DEPLOY.md` says (`nginx -t` before the reload: a broken config takes every site on the VPS down).
+5. Smoke test: the page answers 200, a Demo Visitor is admitted and chats in the browser, `/projects/support/docs` loads, the rest of the site keeps its CSP, a burst on `/projects/support/chat` gets `429` and `/projects/support/auth/dev-token` is a 404.
+6. Demo Reset and backups: install both timers (below) and run each once by hand.
+7. An external uptime check on `https://matheusramos.dev/projects/support/`.
 
 **Before any recreate** (`down`, `up --build`, `--force-recreate`, moving this directory): read this section, run `docker diff` on each `support-*` container and keep anything in it that isn't in the image, and run it here only, so Compose acts on the project `support` alone. The `support` project is the only one ever recreated from this repo: never `docker compose` another project's file, `docker system prune` or touch another project's containers.
 
 ## Rate limits (nginx)
 
-The vhost limits requests per client IP (`limit_req`: `/chat` 12/min with a burst of 6, the rest 5/s), answering `429`. Behind Cloudflare the client is `CF-Connecting-IP`, used as the `limit_req` key and passed on as `X-Real-IP`. It is not set with `real_ip_header`: realip would rewrite the address before nginx checks `conf.d/00-cloudflare-only.conf` (the allowlist that lets only Cloudflare in), and every real client would be denied. Cloudflare overwrites the header, and the allowlist leaves only private networks able to forge it.
+The `/projects/support/` location limits requests per client IP (`limit_req`: `/chat` 12/min with a burst of 6, the rest 5/s), answering `429`. Behind Cloudflare the client is `CF-Connecting-IP`, used as the `limit_req` key and passed on as `X-Real-IP`. It is not set with `real_ip_header`: realip would rewrite the address before nginx checks `conf.d/00-cloudflare-only.conf` (the allowlist that lets only Cloudflare in), and every real client would be denied. Cloudflare overwrites the header, and the allowlist leaves only private networks able to forge it.
+
+## Security headers (nginx)
+
+The location repeats every security header of the main site (on nginx < 1.29.3 one `add_header` in a location drops all those inherited from the `server`) with a single change to the site's CSP: `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for Turnstile. The rest of the site keeps its own. `/projects/support/docs` alone also allows `cdn.jsdelivr.net` and inline scripts and styles, which FastAPI's Swagger UI needs; that page shows only the OpenAPI schema. A change to the site's headers in `portfolio-website` has to be copied into both locations.
 
 ## Resource limits
 
