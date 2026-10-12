@@ -12,6 +12,14 @@ class Settings(BaseSettings):
     redis_url: str
     jwt_secret: str
     jwt_ttl_seconds: int = 3600
+    # Mints a token for any seeded identity: local development and eval only.
+    dev_token_enabled: bool = False
+    # The prefix nginx strips before proxying (e.g. /projects/support), for the API docs.
+    root_path: str = ""
+    # Public demo: Demo Visitors are admitted after a Cloudflare Turnstile check.
+    turnstile_site_key: str | None = None
+    turnstile_secret_key: SecretStr | None = None
+    demo_token_ttl_seconds: int = 7200
     working_state_ttl_seconds: int = 1800
     working_state_window: int = 20
     # anthropic: the Claude API. openai_compatible: any chat completions endpoint, e.g. the

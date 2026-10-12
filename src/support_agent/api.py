@@ -3,11 +3,13 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from langchain_core.tracers.langchain import wait_for_all_tracers
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
@@ -29,6 +31,7 @@ from support_agent.decisions import (
     ApprovalRequestView,
     Decisions,
 )
+from support_agent.demo import CloudflareTurnstile, DemoVisitors, TurnstileVerifier
 from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
 from support_agent.knowledge import Embedder, FastEmbedEmbedder, KnowledgeBase
 from support_agent.limits import (
@@ -43,7 +46,7 @@ from support_agent.limits import (
 from support_agent.llm import LLM, build_llm
 from support_agent.logistics import LogisticsClient
 from support_agent.models import ApprovalStatus, Attendant, Customer, MessageRole
-from support_agent.orders import Orders
+from support_agent.orders import Orders, OrderView
 from support_agent.refunds import RefundPolicy, Refunds
 from support_agent.tickets import Tickets
 from support_agent.tools import RetryPolicy, ToolDeps
@@ -65,6 +68,20 @@ class DevTokenRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class DemoVisitorRequest(BaseModel):
+    turnstile_token: str = Field(min_length=1, max_length=2048)
+
+
+class DemoVisitorResponse(TokenResponse):
+    expires_in: int
+    customer_name: str
+    orders: list[OrderView]
+
+
+class DemoConfig(BaseModel):
+    turnstile_site_key: str | None
 
 
 class ChatRequest(BaseModel):
@@ -116,6 +133,9 @@ def _too_many_requests(detail: str, limited: RateLimited) -> HTTPException:
     )
 
 
+STATIC = Path(__file__).parent / "static"
+
+
 def _today() -> date:
     return datetime.now(UTC).date()
 
@@ -126,9 +146,11 @@ def create_app(
     llm: LLM | None = None,
     embedder: Embedder | None = None,
     logistics_transport: httpx.AsyncBaseTransport | None = None,
+    turnstile: TurnstileVerifier | None = None,
     today: Callable[[], date] = _today,
 ) -> FastAPI:
-    """Build the app. Tests inject a fake LLM and embedder, a logistics transport and a clock."""
+    """Build the app. Tests inject a fake LLM and embedder, a logistics transport, a Turnstile
+    verifier and a clock."""
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -139,6 +161,7 @@ def create_app(
             httpx.AsyncClient(
                 base_url=settings.logistics_url, transport=logistics_transport
             ) as logistics_http,
+            httpx.AsyncClient(timeout=10) as turnstile_http,
             AsyncConnectionPool(
                 settings.checkpointer_url,
                 kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
@@ -148,6 +171,13 @@ def create_app(
             checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
             await checkpointer.setup()
             app.state.sessions = session_factory(engine)
+            app.state.demo_visitors = DemoVisitors(app.state.sessions)
+            app.state.orders = Orders(app.state.sessions)
+            app.state.turnstile = turnstile or (
+                None
+                if settings.turnstile_secret_key is None
+                else CloudflareTurnstile(turnstile_http, settings.turnstile_secret_key)
+            )
             app.state.conversations = Conversations(
                 app.state.sessions,
                 redis,
@@ -169,7 +199,7 @@ def create_app(
                 app.state.sessions, app.state.conversations, checkpointer
             )
             tools = ToolDeps(
-                orders=Orders(app.state.sessions),
+                orders=app.state.orders,
                 logistics=LogisticsClient(
                     logistics_http, timeout_seconds=settings.logistics_timeout_seconds
                 ),
@@ -217,7 +247,7 @@ def create_app(
         # Send the LangSmith traces still queued; returns at once when tracing is off.
         await asyncio.to_thread(wait_for_all_tracers)
 
-    app = FastAPI(title="Customer Support Agent", lifespan=lifespan)
+    app = FastAPI(title="Customer Support Agent", lifespan=lifespan, root_path=settings.root_path)
     bearer = HTTPBearer(auto_error=False)
 
     def authenticated(role: Role) -> Callable[..., Principal]:
@@ -246,8 +276,10 @@ def create_app(
     current_customer = authenticated(Role.CUSTOMER)
     current_attendant = authenticated(Role.ATTENDANT)
 
-    @app.post("/auth/dev-token")
+    @app.post("/auth/dev-token", include_in_schema=settings.dev_token_enabled)
     async def dev_token(body: DevTokenRequest, request: Request) -> TokenResponse:
+        if not settings.dev_token_enabled:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
         async with request.app.state.sessions() as session:
             if body.customer_id is not None:
                 found = await session.get(Customer, body.customer_id)
@@ -261,6 +293,39 @@ def create_app(
         return TokenResponse(
             access_token=issue_token(principal, settings.jwt_secret, settings.jwt_ttl_seconds)
         )
+
+    @app.get("/demo/config")
+    async def demo_config() -> DemoConfig:
+        return DemoConfig(turnstile_site_key=settings.turnstile_site_key)
+
+    @app.post("/demo/visitors", status_code=status.HTTP_201_CREATED)
+    async def admit_demo_visitor(body: DemoVisitorRequest, request: Request) -> DemoVisitorResponse:
+        verifier: TurnstileVerifier | None = request.app.state.turnstile
+        if verifier is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Demo is not configured")
+        if not await verifier.verify(body.turnstile_token):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Turnstile verification failed")
+        demo_visitors: DemoVisitors = request.app.state.demo_visitors
+        visitor = await demo_visitors.admit(today())
+        principal = Principal(
+            subject=visitor.customer_id, role=Role.CUSTOMER, attendant_id=visitor.attendant_id
+        )
+        orders: Orders = request.app.state.orders
+        return DemoVisitorResponse(
+            access_token=issue_token(
+                principal, settings.jwt_secret, settings.demo_token_ttl_seconds
+            ),
+            expires_in=settings.demo_token_ttl_seconds,
+            customer_name=visitor.customer_name,
+            orders=await orders.of_customer(visitor.customer_id),
+        )
+
+    @app.get("/orders")
+    async def customer_orders(
+        request: Request, customer: Annotated[Principal, Depends(current_customer)]
+    ) -> list[OrderView]:
+        orders: Orders = request.app.state.orders
+        return await orders.of_customer(customer.subject)
 
     async def take_turn(body: ChatRequest, request: Request, customer: Principal) -> ChatResponse:
         conversations: Conversations = request.app.state.conversations
@@ -385,4 +450,6 @@ def create_app(
                 status.HTTP_409_CONFLICT, "Approval Request already decided"
             ) from None
 
+    # Last, so the API routes take precedence: the demo page and its assets.
+    app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")
     return app

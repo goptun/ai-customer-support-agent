@@ -179,3 +179,12 @@ def _bag_of_stems(text: str) -> list[float]:
         vector[zlib.crc32(word[:5].encode()) % EMBEDDING_DIM] += 1.0
     norm = math.sqrt(sum(v * v for v in vector)) or 1.0
     return [v / norm for v in vector]
+
+
+class FakeTurnstile:
+    """Accepts only the token a passing widget would hand out."""
+
+    PASSING = "turnstile-passed"
+
+    async def verify(self, token: str) -> bool:
+        return token == self.PASSING

@@ -48,3 +48,24 @@ async def test_failure_scenarios() -> None:
         await client().track("BR300000005")  # 404
     with pytest.raises(TrackingNotFound):
         await client().track("BR999999999")  # unknown code
+
+
+@pytest.mark.parametrize(
+    ("tracking_code", "status", "latest_at"),
+    [
+        ("DEMO-TRANSIT-20261009-100002", ShipmentStatus.IN_TRANSIT, "2026-10-11"),
+        ("DEMO-DELIVERED-20261004-100004", ShipmentStatus.DELIVERED, "2026-10-08"),
+    ],
+)
+async def test_demo_codes_track_from_the_dispatch_date_they_carry(
+    tracking_code: str, status: ShipmentStatus, latest_at: str
+) -> None:
+    tracking = await client().track(tracking_code)
+
+    assert tracking.status is status
+    assert tracking.latest_event.at.date().isoformat() == latest_at
+
+
+async def test_malformed_demo_code_is_unknown() -> None:
+    with pytest.raises(TrackingNotFound):
+        await client().track("DEMO-TRANSIT-2026130-1")

@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Sequence,
     String,
     Text,
     UniqueConstraint,
@@ -231,6 +232,10 @@ class AuditLogEntry(Base):
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONB)
     result: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# Numbers for Demo Visitors' Orders (ORD-{n}), above the seeded ones.
+DEMO_ORDER_NUMBERS = Sequence("demo_order_numbers", start=100001, metadata=Base.metadata)
 
 
 class KnowledgeChunk(Base):
