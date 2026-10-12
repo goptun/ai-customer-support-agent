@@ -124,6 +124,11 @@ def create_app(timeout_delay_seconds: float | None = None) -> FastAPI:
     )
     app = FastAPI(title="Logistics carrier (mock)")
 
+    # Liveness for the Compose healthcheck.
+    @app.get("/health", include_in_schema=False)
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.get("/tracking/{tracking_code}")
     async def tracking(tracking_code: str) -> dict[str, Any]:
         scenario = SCENARIOS.get(tracking_code) or _demo_scenario(tracking_code)

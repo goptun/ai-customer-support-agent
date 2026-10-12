@@ -10,12 +10,15 @@ from support_agent.logistics import (
 from support_agent.logistics_mock import create_app
 
 
-def client() -> LogisticsClient:
-    http = httpx.AsyncClient(
+def http_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
         base_url="http://logistics.test",
         transport=httpx.ASGITransport(app=create_app(timeout_delay_seconds=5)),
     )
-    return LogisticsClient(http, timeout_seconds=0.1)
+
+
+def client() -> LogisticsClient:
+    return LogisticsClient(http_client(), timeout_seconds=0.1)
 
 
 @pytest.mark.parametrize(
@@ -69,3 +72,11 @@ async def test_demo_codes_track_from_the_dispatch_date_they_carry(
 async def test_malformed_demo_code_is_unknown() -> None:
     with pytest.raises(TrackingNotFound):
         await client().track("DEMO-TRANSIT-2026130-1")
+
+
+async def test_health_answers() -> None:
+    async with http_client() as http:
+        response = await http.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

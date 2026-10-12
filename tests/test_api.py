@@ -53,6 +53,13 @@ async def test_dev_token_is_issued_for_seeded_customer_with_role_claim(
     assert claims["role"] == "customer"
 
 
+async def test_health_answers_without_a_token(client: AsyncClient) -> None:
+    response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 async def test_dev_token_is_refused_for_unknown_customer(client: AsyncClient) -> None:
     response = await client.post("/auth/dev-token", json={"customer_id": "cus_nobody"})
 

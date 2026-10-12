@@ -1,0 +1,10 @@
+[Unit]
+Description=ai-customer-support-agent: daily Postgres dump
+
+[Timer]
+OnCalendar=*-*-* 04:30:00 America/Sao_Paulo
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

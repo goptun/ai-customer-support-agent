@@ -1,5 +1,14 @@
 name: support
 
+# Shares a 2 vCPU / no-swap VPS with rag_api, fraud, newsletter and 9router: every service has a
+# memory and CPU limit, sized in README → Deploy → Resource limits.
+
+x-python-healthcheck: &python-healthcheck
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_interval: 2s
+
 services:
   app:
     build: .
@@ -8,6 +17,11 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       LOGISTICS_URL: http://logistics:8080
+      # Production: no LangSmith traces (they'd carry Customer messages). See README → Tracing.
+      LANGSMITH_TRACING: "false"
+      LANGSMITH_TRACING_V2: "false"
+      LANGCHAIN_TRACING_V2: "false"
+      LLM_CALLS_PER_DAY: ${LLM_CALLS_PER_DAY:-300}
     ports:
       - "127.0.0.1:8003:8000"
     depends_on:
@@ -16,7 +30,14 @@ services:
       redis:
         condition: service_healthy
       logistics:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      <<: *python-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      # Migrations, seed and Knowledge Base indexing run before uvicorn starts.
+      start_period: 180s
+    mem_limit: 1280m
+    cpus: 1.0
     restart: unless-stopped
 
   # Mock carrier: deterministic scenarios by tracking code. No published port.
@@ -24,6 +45,12 @@ services:
     build: .
     entrypoint: ["uvicorn"]
     command: ["support_agent.logistics_mock:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]
+    healthcheck:
+      <<: *python-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4)"]
+      start_period: 30s
+    mem_limit: 128m
+    cpus: 0.25
     restart: unless-stopped
 
   postgres:
@@ -39,16 +66,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 384m
+    cpus: 0.5
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Counters, Working State and idempotency keys only: all expire, nothing is persisted.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "48mb", "--maxmemory-policy", "volatile-ttl"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 64m
+    cpus: 0.25
     restart: unless-stopped
 
 volumes:
