@@ -335,23 +335,31 @@ def create_app(
     # A Demo Visitor acts as their paired Attendant, over their own Customer only (ADR-0005).
     current_attendant = authenticated(Role.ATTENDANT, or_demo_visitor=True)
 
-    @app.post("/auth/dev-token", include_in_schema=settings.dev_token_enabled)
-    async def dev_token(body: DevTokenRequest, request: Request) -> TokenResponse:
-        if not settings.dev_token_enabled:
+    # Off in production: a bodyless 404 stub, so no 422 (body validation) or 405 (the UI mount)
+    # gives the route away.
+    if not settings.dev_token_enabled:
+
+        @app.post("/auth/dev-token", include_in_schema=False)
+        async def dev_token_disabled() -> None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
-        async with request.app.state.sessions() as session:
-            if body.customer_id is not None:
-                found = await session.get(Customer, body.customer_id)
-                role = Role.CUSTOMER
-            else:
-                found = await session.get(Attendant, body.attendant_id)
-                role = Role.ATTENDANT
-        if found is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown seeded identity")
-        principal = Principal(subject=found.id, role=role)
-        return TokenResponse(
-            access_token=issue_token(principal, settings.jwt_secret, settings.jwt_ttl_seconds)
-        )
+
+    else:
+
+        @app.post("/auth/dev-token")
+        async def dev_token(body: DevTokenRequest, request: Request) -> TokenResponse:
+            async with request.app.state.sessions() as session:
+                if body.customer_id is not None:
+                    found = await session.get(Customer, body.customer_id)
+                    role = Role.CUSTOMER
+                else:
+                    found = await session.get(Attendant, body.attendant_id)
+                    role = Role.ATTENDANT
+            if found is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown seeded identity")
+            principal = Principal(subject=found.id, role=role)
+            return TokenResponse(
+                access_token=issue_token(principal, settings.jwt_secret, settings.jwt_ttl_seconds)
+            )
 
     # Liveness for the Compose healthcheck.
     @app.get("/health", include_in_schema=False)
