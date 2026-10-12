@@ -12,13 +12,12 @@ import logging
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
-from psycopg.rows import dict_row
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from support_agent.config import Settings, get_settings
-from support_agent.db import migrate, session_factory
+from support_agent.db import CHECKPOINTER_CONNECTION_KWARGS, migrate, session_factory
 from support_agent.knowledge import Embedder, FastEmbedEmbedder, index_policies, load_policies
 from support_agent.limits import LLMBudget
 from support_agent.seed import seed
@@ -38,7 +37,7 @@ async def reset_demo(settings: Settings, embedder: Embedder) -> None:
         await index_policies(sessions, embedder, load_policies())
         # The running app only creates the checkpoint tables at start-up.
         async with await AsyncConnection.connect(
-            settings.checkpointer_url, autocommit=True, prepare_threshold=0, row_factory=dict_row
+            settings.checkpointer_url, **CHECKPOINTER_CONNECTION_KWARGS
         ) as checkpoints:
             await AsyncPostgresSaver(checkpoints).setup()
         # The app's connections may hold plans for the dropped tables and types: end them,
@@ -60,7 +59,7 @@ async def _clear_working_state(redis_url: str) -> None:
     redis = Redis.from_url(redis_url)
     try:
         async for key in redis.scan_iter(count=500):
-            if not key.decode().startswith(LLMBudget.KEY_PREFIX):
+            if not LLMBudget.owns(key.decode()):
                 await redis.delete(key)
     finally:
         await redis.aclose()
