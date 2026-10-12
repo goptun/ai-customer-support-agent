@@ -45,6 +45,8 @@ class LLMBudget:
     calls over the cap rather than being cut off halfway.
     """
 
+    _KEY_PREFIX = "llm_calls:"
+
     def __init__(self, redis: Redis, calls_per_day: int) -> None:
         self._redis = redis
         self._cap = calls_per_day
@@ -64,7 +66,12 @@ class LLMBudget:
 
     @staticmethod
     def key(day: date) -> str:
-        return f"llm_calls:{day.isoformat()}"
+        return f"{LLMBudget._KEY_PREFIX}{day.isoformat()}"
+
+    @staticmethod
+    def owns(key: str) -> bool:
+        """Whether a Redis key is one of the budget's daily counters."""
+        return key.startswith(LLMBudget._KEY_PREFIX)
 
 
 async def _count(redis: Redis, key: str, ttl_seconds: int) -> int:

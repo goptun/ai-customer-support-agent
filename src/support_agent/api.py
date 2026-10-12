@@ -15,7 +15,6 @@ from fastapi.staticfiles import StaticFiles
 from langchain_core.tracers.langchain import wait_for_all_tracers
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
-from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel, Field, model_validator
 from redis.asyncio import Redis
@@ -34,7 +33,7 @@ from support_agent.auth import (
 from support_agent.cancellations import Cancellations
 from support_agent.config import Settings, get_settings
 from support_agent.conversations import ConversationNotFound, Conversations
-from support_agent.db import session_factory
+from support_agent.db import CHECKPOINTER_CONNECTION_KWARGS, session_factory
 from support_agent.decisions import (
     AlreadyDecided,
     ApprovalRequestNotFound,
@@ -191,7 +190,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = create_async_engine(settings.database_url)
+        # Connections are checked on checkout: a Demo Reset ends them all (support_agent.reset).
+        engine = create_async_engine(settings.database_url, pool_pre_ping=True)
         redis = Redis.from_url(settings.redis_url)
         async with (
             httpx.AsyncClient(
@@ -200,8 +200,9 @@ def create_app(
             httpx.AsyncClient(timeout=10) as turnstile_http,
             AsyncConnectionPool(
                 settings.checkpointer_url,
-                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+                kwargs=CHECKPOINTER_CONNECTION_KWARGS,
                 open=False,
+                check=AsyncConnectionPool.check_connection,
             ) as pool,
         ):
             checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]

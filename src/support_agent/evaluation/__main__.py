@@ -21,15 +21,13 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from support_agent.api import create_app
 from support_agent.config import Settings
-from support_agent.db import session_factory
+from support_agent.db import migrate, session_factory
 from support_agent.evaluation.dataset import Dataset, load_dataset
 from support_agent.evaluation.judge import AnthropicJudge, OpenAICompatibleJudge, build_judge
 from support_agent.evaluation.markdown import render_markdown
@@ -73,9 +71,7 @@ def main() -> None:
         settings = settings.model_copy(
             update={"database_url": database_url, "redis_url": redis_url}
         )
-        config = Config("alembic.ini")
-        config.set_main_option("sqlalchemy.url", settings.database_url)
-        command.upgrade(config, "head")
+        migrate(settings.database_url)
         asyncio.run(_evaluate(settings, llm, judge, datasets, args.out, args.seed))
 
 
