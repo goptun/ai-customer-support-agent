@@ -4,7 +4,7 @@ from typing import Any
 
 import jwt
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from support_agent.auth import Principal, Role, issue_token
@@ -147,7 +147,7 @@ async def test_visitor_cannot_reach_another_visitors_conversations_or_orders(
     assert {o["order_id"] for o in listed.json()} == {o["order_id"] for o in intruder["orders"]}
 
 
-def restart_signal(response: Any) -> bool:
+def restart_signal(response: Response) -> bool:
     return bool(response.status_code == 401 and response.json().get("code") == "demo_restart")
 
 
@@ -216,7 +216,10 @@ async def test_demo_config_hands_the_ui_the_configured_site_key(client: AsyncCli
     response = await client.get("/demo/config")
 
     assert response.status_code == 200
-    assert response.json() == {"turnstile_site_key": TEST_TURNSTILE_SITE_KEY}
+    assert response.json() == {
+        "turnstile_site_key": TEST_TURNSTILE_SITE_KEY,
+        "llm_cap_exhausted": False,
+    }
 
 
 async def test_ui_is_served_at_the_root(client: AsyncClient) -> None:

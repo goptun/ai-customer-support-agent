@@ -40,16 +40,28 @@ let busy = false;
 let widgetId = null;
 let pendingNotice = null; // shown once the next admission succeeds
 let replaying = false; // the daily LLM cap is exhausted: no chat, a recorded Conversation
+let replay = null; // the recorded Conversation, once fetched
 
 // Per-viewer convenience only: the page works without storage.
 function loadVisitor() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (stored && typeof stored.token === 'string' && stored.expiresAt > Date.now() + 60000) {
-      return stored;
-    }
+    if (stored && typeof stored.token === 'string') return stored;
   } catch (_) { /* storage unavailable */ }
   return null;
+}
+
+// Tokens aren't renewed: one about to expire is as good as expired.
+function isExpiring(stored) {
+  return !(stored.expiresAt > Date.now() + 60000);
+}
+
+async function fetchConfig() {
+  try {
+    return await (await fetch('demo/config')).json();
+  } catch (_) {
+    return {};
+  }
 }
 
 function saveVisitor() {
@@ -150,12 +162,6 @@ function api(path, options = {}) {
   return fetch(path, { ...options, headers });
 }
 
-// The API's machine-readable signal on an error response, if any.
-async function signalOf(response) {
-  const body = await response.clone().json().catch(() => ({}));
-  return body.code || null;
-}
-
 // Whether the visitor is still admitted: false once the token expired or a Demo Reset ran.
 async function refreshOrders() {
   const response = await api('orders');
@@ -195,11 +201,10 @@ async function admit(notice) {
   pendingNotice = notice;
   setReady(false);
   setStatus('Preparando sua demo…');
-  let config;
-  try {
-    config = await (await fetch('demo/config')).json();
-  } catch (_) {
-    config = {};
+  const config = await fetchConfig();
+  if (config.llm_cap_exhausted) {
+    await startReplay();
+    return;
   }
   if (!config.turnstile_site_key) {
     setStatus('A demo está indisponível no momento. Tente de novo mais tarde.', true);
@@ -293,13 +298,13 @@ async function send(text) {
       addMessage('error', 'Essa conversa não existe mais. Envie de novo para começar outra.');
       return;
     }
-    if (response.status === 429 && (await signalOf(response)) === 'llm_cap_exhausted') {
-      busy = false;
-      await startReplay();
-      return;
-    }
     if (response.status === 429) {
       const body = await response.json().catch(() => ({}));
+      if (body.code === 'llm_cap_exhausted') {
+        busy = false;
+        await startReplay();
+        return;
+      }
       const wait = response.headers.get('Retry-After');
       const suffix = wait ? ` Tente de novo em ${wait} s.` : '';
       addMessage('error', `${body.detail || 'Muitas mensagens em pouco tempo.'}${suffix}`);
@@ -359,8 +364,6 @@ async function playReplay(replay) {
   replayAgainBtn.disabled = false;
 }
 
-let replay = null;
-
 async function startReplay() {
   replaying = true;
   visitor = null;
@@ -406,6 +409,14 @@ newConversationBtn.addEventListener('click', () => {
 
 async function start() {
   visitor = loadVisitor();
+  if (visitor && isExpiring(visitor)) {
+    await startOver(RESTARTED);
+    return;
+  }
+  if (visitor && (await fetchConfig()).llm_cap_exhausted) {
+    await startReplay();
+    return;
+  }
   if (visitor) {
     setStatus('Retomando sua demo…');
     let admitted = null; // null: the server couldn't be reached

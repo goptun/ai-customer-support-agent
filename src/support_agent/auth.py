@@ -34,6 +34,7 @@ class ExpiredToken(InvalidToken):
     """Signed by us but past its expiry; carries whose it was."""
 
     def __init__(self, principal: Principal) -> None:
+        super().__init__("token expired")
         self.principal = principal
 
 

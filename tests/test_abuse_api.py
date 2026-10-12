@@ -68,7 +68,7 @@ async def test_over_the_daily_llm_cap_no_turn_runs_until_the_next_day(
     assert await redis.ttl(key) > 0
 
 
-async def test_admission_says_up_front_whether_the_daily_llm_cap_is_exhausted(
+async def test_admission_and_config_say_up_front_whether_the_daily_llm_cap_is_exhausted(
     settings: Settings, engine: AsyncEngine, llm: ScriptedLLM, redis: Redis
 ) -> None:
     key = LLMBudget.key(datetime.now(UTC).date())
@@ -78,9 +78,11 @@ async def test_admission_says_up_front_whether_the_daily_llm_cap_is_exhausted(
         before = await admitted(client)
         await chat(client, bearer(before), "primeira do dia")
         after = await admitted(client)
+        config = await client.get("/demo/config")
 
     assert before["llm_cap_exhausted"] is False
     assert after["llm_cap_exhausted"] is True
+    assert config.json()["llm_cap_exhausted"] is True
 
 
 async def test_a_retry_with_the_same_idempotency_key_returns_the_original_turn(

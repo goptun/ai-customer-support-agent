@@ -93,6 +93,8 @@ class DemoVisitorResponse(TokenResponse):
 
 class DemoConfig(BaseModel):
     turnstile_site_key: str | None
+    # Lets the page go straight to the replay, before the Turnstile check or a resumed chat.
+    llm_cap_exhausted: bool
 
 
 class ChatRequest(BaseModel):
@@ -294,16 +296,15 @@ def create_app(
             request: Request,
             credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
         ) -> Principal:
+            challenge = {"WWW-Authenticate": "Bearer"}
             unauthorized = HTTPException(
-                status.HTTP_401_UNAUTHORIZED,
-                "Invalid or missing token",
-                headers={"WWW-Authenticate": "Bearer"},
+                status.HTTP_401_UNAUTHORIZED, "Invalid or missing token", headers=challenge
             )
             restart = SignalledHTTPException(
                 status.HTTP_401_UNAUTHORIZED,
                 "Demo Visitor no longer admitted",
                 Signal.DEMO_RESTART,
-                headers={"WWW-Authenticate": "Bearer"},
+                headers=challenge,
             )
             if credentials is None:
                 raise unauthorized
@@ -318,10 +319,9 @@ def create_app(
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN, f"{role.capitalize()} token required"
                 )
-            if found.is_demo_visitor:
-                async with request.app.state.sessions() as session:
-                    if await session.get(Customer, found.subject) is None:  # Demo Reset
-                        raise restart
+            demo_visitors: DemoVisitors = request.app.state.demo_visitors
+            if found.is_demo_visitor and not await demo_visitors.exists(found.subject):
+                raise restart  # a Demo Reset removed its Customer
             return found
 
         return principal
@@ -353,8 +353,12 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/demo/config")
-    async def demo_config() -> DemoConfig:
-        return DemoConfig(turnstile_site_key=settings.turnstile_site_key)
+    async def demo_config(request: Request) -> DemoConfig:
+        llm_budget: LLMBudget = request.app.state.llm_budget
+        return DemoConfig(
+            turnstile_site_key=settings.turnstile_site_key,
+            llm_cap_exhausted=await llm_budget.exhausted(),
+        )
 
     @app.post("/demo/visitors", status_code=status.HTTP_201_CREATED)
     async def admit_demo_visitor(body: DemoVisitorRequest, request: Request) -> DemoVisitorResponse:
