@@ -459,14 +459,14 @@ def _ungrounded(reply: str, facts: Facts) -> list[str]:
     return list(dict.fromkeys(match.group() for match in ordered))
 
 
-# A negation shortly before a wording, in the same clause, contradicts it: "não foi extraviado",
-# "não é da transportadora" (#49). Two words at most, so "Não consegui consultar a
-# transportadora" still names the carrier.
+# A status shortly before which, in the same clause, a negation denies it: "ainda não foi
+# enviado" (#59). Two words at most.
 _NEGATED = re.compile(r"\b(?:não|nunca|nem)(?:\s+[^\s.,;:!?]+){0,2}\s+$")
-# What happened to the Shipment is contradicted by a negation anywhere earlier in its clause:
-# "não sei se foi extraviado", "nunca chegou a ser devolvido".
+# A required wording is contradicted by a negation anywhere earlier in its clause: "não sei se
+# foi extraviado", "não é problema da transportadora". It leans towards rejecting, since the
+# facts are always a correct fallback: "Não consegui consultar a transportadora" falls back
+# too (#52).
 _NEGATED_IN_CLAUSE = re.compile(r"\b(?:não|nunca|nem)\b[^.,;:!?]*$")
-_CLAUSE_WIDE = frozenset().union(*_WONT_ARRIVE.values())
 
 
 def _affirms(folded_reply: str, wording: str) -> bool:
@@ -475,9 +475,8 @@ def _affirms(folded_reply: str, wording: str) -> bool:
     The wording must start a word, so a stem ("extraviad") or a code doesn't match in the
     middle of another word (#53).
     """
-    negated = _NEGATED_IN_CLAUSE if wording in _CLAUSE_WIDE else _NEGATED
     return any(
-        not negated.search(folded_reply, 0, match.start())
+        not _NEGATED_IN_CLAUSE.search(folded_reply, 0, match.start())
         for match in re.finditer(rf"(?<!\w){re.escape(wording.casefold())}", folded_reply)
     )
 
