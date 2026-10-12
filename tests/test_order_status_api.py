@@ -250,15 +250,15 @@ async def test_reply_leaving_out_a_required_fact_is_replaced(
         pytest.param(
             "cus_carla",
             "ORD-3004",
-            "Não consegui consultar a transportadora agora. O ORD-3004 (rastreio BR300000004) "
-            "tem previsão para 04/09/2026.",
+            "O ORD-3004 (rastreio BR300000004) tem previsão para 04/09/2026. A transportadora "
+            "está fora do ar agora.",
             id="carrier_error_needs_the_carrier",
         ),
         pytest.param(
             "cus_carla",
             "ORD-3005",
-            "A transportadora ainda não tem rastreio do ORD-3005 (BR300000005). Previsão: "
-            "05/09/2026.",
+            "O ORD-3005 (BR300000005) tem previsão para 05/09/2026. A transportadora ainda não "
+            "tem rastreio.",
             id="no_tracking_needs_the_carrier",
         ),
         pytest.param(
@@ -335,6 +335,30 @@ async def test_reply_with_every_required_fact_is_kept(
             "rastreio não é da transportadora.",
             "transportadora",
             id="carrier_error_said_not_the_carrier",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3004",
+            "O ORD-3004 (rastreio BR300000004) tem previsão para 04/09/2026, e o atraso no "
+            "rastreio não é problema da transportadora.",
+            "transportadora",
+            id="carrier_error_said_not_the_carriers_problem",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3004",
+            "A transportadora está fora do ar. O ORD-3004 (rastreio BR300000004) não deve "
+            "chegar até 04/09/2026.",
+            "04/09/2026",
+            id="promised_date_denied_far_from_the_negation",
+        ),
+        pytest.param(
+            "cus_carla",
+            "ORD-3004",
+            "Não consegui consultar a transportadora agora. O ORD-3004 (rastreio BR300000004) "
+            "tem previsão para 04/09/2026.",
+            "transportadora",
+            id="carrier_after_a_negation_in_its_clause_falls_back",
         ),
     ],
 )
