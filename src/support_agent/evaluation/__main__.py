@@ -61,6 +61,7 @@ def main() -> None:
         database_url="",  # set once the infrastructure is up
         redis_url="",
         jwt_secret=secrets.token_urlsafe(32),
+        dev_token_enabled=True,
         logistics_url="http://logistics.eval",
     )
     try:

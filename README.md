@@ -11,7 +11,8 @@ Customer / Attendant ──HTTP──▶ FastAPI (api.py) ──▶ Conversation
                                     └─ /approvals ─▶ approval workflow (LangGraph, approvals.py) ─▶ Refunds
 ```
 
-- **API** (`api.py`): JWT-authenticated `/chat` for Customers, `/approvals` for Attendants, `/auth/dev-token` for local tokens.
+- **API** (`api.py`): JWT-authenticated `/chat` for Customers, `/approvals` for Attendants, `/auth/dev-token` for local tokens (only with `DEV_TOKEN_ENABLED=true`).
+- **Demo page** (`static/`, served at `/`): a pt-BR chat UI. After an invisible Cloudflare Turnstile check (`POST /demo/visitors`) each Demo Visitor gets a fictitious Customer with Orders in distinct states and a paired Attendant ([ADR-0005](docs/adr/0005-demo-visitor-is-customer-and-scoped-attendant.md)), with a ~2h token. Needs `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`; set `ROOT_PATH` when served under a prefix (e.g. `/projects/support`) so `/docs` works.
 - **Conversation graph** (`graph.py`): one run per Customer message on the Conversation's thread. The LLM only classifies the Intent and words the reply; every fact comes from a tool and every side effect is a tool call (idempotent, audited).
 - **Approval workflow** (`approvals.py`, `decisions.py`): a Refund waiting for an Attendant pauses on a thread of its own ([ADR-0002](docs/adr/0002-separate-thread-per-approval-workflow.md)), so the Customer keeps chatting.
 - **Postgres** (pgvector): domain data, the audit log, the Knowledge Base embeddings and the LangGraph checkpoints, so paused runs survive restarts ([ADR-0001](docs/adr/0001-postgres-checkpointer-for-paused-runs.md)). **Redis**: a disposable cache of each Conversation's working state.
@@ -118,7 +119,7 @@ curl -s -X POST localhost:8003/chat -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -d '{"message":"Meu pedido ainda não chegou"}'
 ```
 
-Dev tokens are signed with `JWT_SECRET` and only exist for local use: `{"customer_id": ...}` for a Customer, `{"attendant_id": ...}` for an Attendant (seeded ids above).
+Dev tokens are signed with `JWT_SECRET` and only exist for local use (`DEV_TOKEN_ENABLED=true`; off by default, `/auth/dev-token` answers 404): `{"customer_id": ...}` for a Customer, `{"attendant_id": ...}` for an Attendant (seeded ids above).
 
 Send the returned `conversation_id` to continue the same Conversation. Policy questions ("Qual o prazo para trocar um produto?") are answered from the Knowledge Base, naming the policy; when no policy covers the question the agent says so and offers a Ticket.
 

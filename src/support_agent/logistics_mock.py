@@ -6,6 +6,7 @@ the external carrier, so it shares no code with the agent.
 
 import asyncio
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -83,6 +84,37 @@ SCENARIOS: dict[str, dict[str, Any] | str] = {
     # ORD-3005 (BR300000005) is deliberately absent: the carrier answers 404.
 }
 
+# Demo Visitors' Orders are dated from their admission, so their codes carry the dispatch
+# date: DEMO-{TRANSIT|DELIVERED}-{yyyymmdd}-{order number}.
+_DEMO_CODE = re.compile(r"^DEMO-(TRANSIT|DELIVERED)-(\d{8})-\d+$")
+# Days from dispatch; delivered Orders arrive DEMO_DELIVERY_DAYS after it.
+DEMO_DELIVERY_DAYS = 4
+
+
+def _demo_scenario(tracking_code: str) -> dict[str, Any] | None:
+    match = _DEMO_CODE.match(tracking_code)
+    if match is None:
+        return None
+    try:
+        dispatched = datetime.strptime(match.group(2), "%Y%m%d").replace(hour=12, tzinfo=UTC)
+    except ValueError:
+        return None
+    offset = (dispatched - ANCHOR).days
+    if match.group(1) == "TRANSIT":
+        return _track("in_transit", (offset, *_POSTED), (offset + 2, *_TRANSIT))
+    return _track(
+        "delivered",
+        (offset, *_POSTED),
+        (offset + 2, *_TRANSIT),
+        (offset + DEMO_DELIVERY_DAYS - 0.2, *_OUT),
+        (
+            offset + DEMO_DELIVERY_DAYS,
+            "delivered",
+            "Objeto entregue ao destinatário",
+            "Curitiba/PR",
+        ),
+    )
+
 
 def create_app(timeout_delay_seconds: float | None = None) -> FastAPI:
     delay = (
@@ -94,7 +126,7 @@ def create_app(timeout_delay_seconds: float | None = None) -> FastAPI:
 
     @app.get("/tracking/{tracking_code}")
     async def tracking(tracking_code: str) -> dict[str, Any]:
-        scenario = SCENARIOS.get(tracking_code)
+        scenario = SCENARIOS.get(tracking_code) or _demo_scenario(tracking_code)
         if scenario is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown tracking code")
         if scenario == TIMEOUT:

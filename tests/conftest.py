@@ -16,9 +16,10 @@ from support_agent.knowledge import index_policies, load_policies
 from support_agent.logistics_mock import create_app as create_logistics_mock
 from support_agent.seed import ANCHOR, seed
 
-from .fakes import KNOWLEDGE_MIN_SCORE, LexicalEmbedder, ScriptedLLM
+from .fakes import KNOWLEDGE_MIN_SCORE, FakeTurnstile, LexicalEmbedder, ScriptedLLM
 
 TEST_JWT_SECRET = "test-secret-with-enough-length-for-hs256"
+TEST_TURNSTILE_SITE_KEY = "test-site-key"
 
 
 @pytest.fixture(scope="session")
@@ -52,6 +53,8 @@ def settings(infra_urls: tuple[str, str]) -> Settings:
         logistics_timeout_seconds=0.2,
         tool_retry_backoff_seconds=0,
         knowledge_min_score=KNOWLEDGE_MIN_SCORE,
+        dev_token_enabled=True,
+        turnstile_site_key=TEST_TURNSTILE_SITE_KEY,
     )
 
 
@@ -85,6 +88,7 @@ async def app_client(settings: Settings, llm: ScriptedLLM) -> AsyncIterator[Asyn
         llm=llm,
         embedder=LexicalEmbedder(),
         logistics_transport=ASGITransport(app=create_logistics_mock(timeout_delay_seconds=5)),
+        turnstile=FakeTurnstile(),
         today=ANCHOR.date,
     )
     async with (

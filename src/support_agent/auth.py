@@ -1,4 +1,4 @@
-"""Dev JWT auth: tokens only for seeded identities, with a role claim."""
+"""JWT auth: a role claim, and for a Demo Visitor the paired Attendant (ADR-0005)."""
 
 import enum
 from dataclasses import dataclass
@@ -18,6 +18,8 @@ class Role(enum.StrEnum):
 class Principal:
     subject: str
     role: Role
+    # A Demo Visitor's Customer principal carries its paired Attendant.
+    attendant_id: str | None = None
 
 
 class InvalidToken(Exception):
@@ -32,6 +34,8 @@ def issue_token(principal: Principal, secret: str, ttl_seconds: int) -> str:
         "iat": now,
         "exp": now + timedelta(seconds=ttl_seconds),
     }
+    if principal.attendant_id is not None:
+        claims["att"] = principal.attendant_id
     return jwt.encode(claims, secret, algorithm=ALGORITHM)
 
 
@@ -40,6 +44,8 @@ def verify_token(token: str, secret: str) -> Principal:
         claims = jwt.decode(
             token, secret, algorithms=[ALGORITHM], options={"require": ["sub", "role", "exp"]}
         )
-        return Principal(subject=claims["sub"], role=Role(claims["role"]))
+        return Principal(
+            subject=claims["sub"], role=Role(claims["role"]), attendant_id=claims.get("att")
+        )
     except (jwt.PyJWTError, ValueError) as exc:
         raise InvalidToken from exc

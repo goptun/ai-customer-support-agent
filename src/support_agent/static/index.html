@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agente de Atendimento — Demo</title>
+<meta name="description" content="Demo de um agente de IA para atendimento ao cliente: consulta pedidos, cancela, pede reembolso com aprovação humana e responde sobre as políticas da loja.">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/noto-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="style.css?v=1">
+<script src="/theme-init.js"></script>
+</head>
+<body>
+<header class="nav-wrap">
+  <nav class="nav" aria-label="Navegação principal">
+    <a class="brand" href="/"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="brand-mark-tile" x="0.5" y="0.5" width="31" height="31" rx="7"></rect><path class="brand-mark-glyph" d="M5.5 23V9l5 7.5 5-7.5v14M19.5 23V9h3.75a3.75 3.75 0 0 1 0 7.5H19.5M23 16.5l4 6.5"></path></svg>Matheus Ramos</a>
+    <ul class="nav-links">
+      <li><a href="/">Início</a></li>
+      <li><a href="/projects/" aria-current="page">Projetos</a></li>
+      <li><a href="/newsletter/">Newsletter</a></li>
+    </ul>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro">
+      <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+      </svg>
+      <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
+      </svg>
+    </button>
+  </nav>
+</header>
+<script src="/theme-toggle.js"></script>
+
+<main class="wrap">
+  <div class="intro">
+    <h1>Agente de Atendimento ao Cliente</h1>
+    <p class="subtitle">
+      Um agente de IA que atende clientes de uma loja fictícia: consulta pedidos e rastreio,
+      cancela pedidos ainda não enviados, pede reembolsos que passam por aprovação humana e
+      responde sobre as políticas da loja. Você entra como um cliente com pedidos próprios.
+    </p>
+    <div class="badge-row">
+      <span class="badge">LangGraph</span>
+      <span class="badge">human-in-the-loop</span>
+      <span class="badge">tools com auditoria</span>
+      <span class="badge">RAG nas políticas</span>
+      <a class="api-link" href="docs">API →</a>
+    </div>
+  </div>
+
+  <p class="notice" role="note">
+    <strong>Demo pública</strong> — não informe dados reais; tudo é apagado diariamente.
+  </p>
+
+  <div class="layout">
+    <aside class="panel orders-panel" aria-labelledby="orders-title">
+      <h2 id="orders-title">Seus pedidos</h2>
+      <ul class="orders" id="orders"></ul>
+    </aside>
+
+    <section class="panel chat-panel" aria-labelledby="chat-title">
+      <div class="chat-head">
+        <h2 id="chat-title">Conversa</h2>
+        <button class="ghost" id="new-conversation" type="button" disabled>Nova conversa</button>
+      </div>
+      <div class="messages" id="messages" role="log" aria-live="polite"></div>
+      <div class="chips" id="chips" aria-label="Sugestões de perguntas"></div>
+      <form class="composer" id="composer">
+        <label class="visually-hidden" for="message">Mensagem</label>
+        <textarea id="message" rows="2" maxlength="4000" placeholder="Escreva sua mensagem…" disabled></textarea>
+        <button id="send" type="submit" disabled>Enviar</button>
+      </form>
+      <p class="status" id="status" role="status"></p>
+    </section>
+  </div>
+
+  <div id="turnstile" class="turnstile"></div>
+
+  <footer>
+    Projeto de portfolio — os pedidos, clientes e atendentes são fictícios e o rastreio vem de
+    uma transportadora simulada.
+  </footer>
+</main>
+
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+<script src="app.js?v=1" defer></script>
+</body>
+</html>
