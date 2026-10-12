@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Daily dump of the support Postgres into ~/ops/backups/support, keeping the newest $KEEP.
-# Run by deploy/systemd/support-backup.timer; safe to run by hand. Restore: README → Deploy.
+# Run by deploy/systemd/support-backup.timer; safe to run by hand. Restore: docs/deploy.md → Backups.
 set -euo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-$HOME/ops/backups/support}"

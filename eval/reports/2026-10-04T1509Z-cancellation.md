@@ -1,7 +1,7 @@
 # Evaluation: cancellation — 2026-10-04
 
 - Started at: 2026-10-04T15:09:39.880908+00:00
-- Models (openai_compatible): classifier `arsenal-vps`, responder `arsenal-vps`, judge `arsenal-vps`
+- Models (openai_compatible): classifier `router-model`, responder `router-model`, judge `router-model`
 - Commit: `5635528`
 - Conversations: 9 (14 Customer turns)
 

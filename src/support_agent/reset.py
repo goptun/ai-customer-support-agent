@@ -1,6 +1,6 @@
 """The daily Demo Reset: rebuilds the demo database from scratch and clears Redis (ADR-0006).
 
-Run with `python -m support_agent.reset` against the running stack (README → Deploy → Demo
+Run with `python -m support_agent.reset` against the running stack (docs/deploy.md → Demo
 Reset). The schema is dropped and rebuilt (migrations, then seed) rather than its rows deleted,
 so the Audit Log's append-only trigger is never bypassed; the LangGraph checkpoints live in the
 same schema and go with it. Demo Visitors caught mid-visit get the restart signal, as their

@@ -1,7 +1,7 @@
 # Evaluation: conversation — 2026-10-04
 
 - Started at: 2026-10-04T20:37:05.558983+00:00
-- Models (openai_compatible): classifier `arsenal-vps`, responder `arsenal-vps`, judge `arsenal-vps`
+- Models (openai_compatible): classifier `router-model`, responder `router-model`, judge `router-model`
 - Commit: `750d7a1-dirty`
 - Conversations: 11 (21 Customer turns)
 

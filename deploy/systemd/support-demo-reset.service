@@ -1,4 +1,4 @@
-# Started by support-demo-reset.timer. Install: README → Deploy → Demo Reset.
+# Started by support-demo-reset.timer. Install: docs/deploy.md → Demo Reset.
 [Unit]
 Description=ai-customer-support-agent: Demo Reset (rebuild the demo database, clear Redis)
 Wants=network-online.target

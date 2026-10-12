@@ -3,9 +3,9 @@
   "started_at": "2026-10-04T22:10:37.275473Z",
   "models": {
     "provider": "openai_compatible",
-    "classifier": "arsenal-vps",
-    "responder": "arsenal-vps",
-    "judge": "arsenal-vps"
+    "classifier": "router-model",
+    "responder": "router-model",
+    "judge": "router-model"
   },
   "git_commit": "44c3891",
   "summary": {

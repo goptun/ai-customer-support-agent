@@ -1,4 +1,4 @@
-"""The OpenAI-compatible provider (e.g. the 9router), against a fake endpoint at the HTTP layer.
+"""The OpenAI-compatible provider (e.g. a router), against a fake endpoint at the HTTP layer.
 
 Combos route to models of varying discipline, so replies may wrap the JSON in a code fence or
 prose, or open with a reasoning block; anything unparseable takes the same safe fallback as
@@ -47,7 +47,7 @@ class FakeEndpoint:
                 "id": "chatcmpl-1",
                 "object": "chat.completion",
                 "created": 0,
-                "model": "arsenal-vps",
+                "model": "router-model",
                 "choices": [
                     {
                         "index": 0,

@@ -1,5 +1,5 @@
 """LLM provider interface and its implementations: Anthropic, and any OpenAI-compatible
-endpoint such as the 9router (ADR-0004), chosen by configuration.
+endpoint such as a self-hosted router (ADR-0004), chosen by configuration.
 
 Tests use a scripted fake; only the evaluation suite talks to the real models.
 """

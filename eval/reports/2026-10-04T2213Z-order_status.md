@@ -1,7 +1,7 @@
 # Evaluation: order_status — 2026-10-04
 
 - Started at: 2026-10-04T22:13:04.094814+00:00
-- Models (openai_compatible): classifier `arsenal-vps`, responder `arsenal-vps`, judge `arsenal-vps`
+- Models (openai_compatible): classifier `router-model`, responder `router-model`, judge `router-model`
 - Commit: `44c3891`
 - Conversations: 20 (23 Customer turns)
 
