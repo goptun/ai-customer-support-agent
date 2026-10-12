@@ -224,6 +224,16 @@ The VPS has 2 vCPUs, ~11.6 GiB of RAM and no swap, and the services already ther
 
 Every service has `restart: unless-stopped` and a healthcheck (`/health` on the app and the mock, `pg_isready`, `redis-cli ping`); `docker compose ps` shows `healthy`. Only the app publishes a port, on `127.0.0.1:8003`.
 
+#### Demo Reset
+
+Every day at 04:00 UTC the Demo Reset rebuilds the demo data from scratch ([ADR-0006](docs/adr/0006-demo-reset-rebuilds-the-database.md)): `python -m support_agent.reset` drops the `public` schema and rebuilds it (migrations, seed, Knowledge Base index, the LangGraph checkpoint tables), ends every other connection to the database (the app's pools check connections on checkout and reconnect) and deletes every Redis key but the LLM budget's, so a reset never hands out a second day of LLM calls. Demo Visitors caught mid-visit get the restart signal. Requests in flight during the rebuild (seconds, mostly embedding the policies) may fail. It runs as a one-off container of the app's image, so the image must be rebuilt once with this code before the timer works; while it runs it adds ~0.9 GiB (the embedding model) on top of the project's limits.
+
+```sh
+sudo cp deploy/systemd/support-demo-reset.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now support-demo-reset.timer
+sudo systemctl start support-demo-reset.service && journalctl -u support-demo-reset.service -n 20  # by hand
+```
+
 #### Backups
 
 `scripts/backup-postgres.sh` writes a `pg_dump` (custom format) of the `support` database to `~/ops/backups/support/support-<UTC timestamp>.dump`, checks that `pg_restore` can read it and keeps the newest 14 (`KEEP`). The credentials never leave the container. A systemd timer runs it daily at 04:30 (São Paulo):

@@ -1,0 +1,13 @@
+# Started by support-demo-reset.timer. Install: README → Deploy → Demo Reset.
+[Unit]
+Description=ai-customer-support-agent: Demo Reset (rebuild the demo database, clear Redis)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/ai-customer-support-agent
+# A one-off container of the running app's image, on the project's network: no recreate, and
+# its own memory limit, so loading the embedding model can't push the app over its own.
+ExecStart=/usr/bin/docker compose run --rm --no-deps --entrypoint python app -m support_agent.reset

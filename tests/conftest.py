@@ -3,15 +3,13 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from support_agent.api import create_app
 from support_agent.config import Settings
-from support_agent.db import session_factory
+from support_agent.db import migrate, session_factory
 from support_agent.knowledge import index_policies, load_policies
 from support_agent.logistics_mock import create_app as create_logistics_mock
 from support_agent.seed import ANCHOR, seed
@@ -60,9 +58,7 @@ def settings(infra_urls: tuple[str, str]) -> Settings:
 
 @pytest.fixture(scope="session")
 def migrated(settings: Settings) -> None:
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", settings.database_url)
-    command.upgrade(config, "head")
+    migrate(settings.database_url)
 
 
 @pytest.fixture(scope="session")

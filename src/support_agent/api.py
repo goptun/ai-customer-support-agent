@@ -191,7 +191,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = create_async_engine(settings.database_url)
+        # Connections are checked on checkout: a Demo Reset ends them all (support_agent.reset).
+        engine = create_async_engine(settings.database_url, pool_pre_ping=True)
         redis = Redis.from_url(settings.redis_url)
         async with (
             httpx.AsyncClient(
@@ -202,6 +203,7 @@ def create_app(
                 settings.checkpointer_url,
                 kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
                 open=False,
+                check=AsyncConnectionPool.check_connection,
             ) as pool,
         ):
             checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
