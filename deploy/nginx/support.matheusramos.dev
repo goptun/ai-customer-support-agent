@@ -1,0 +1,54 @@
+# support.matheusramos.dev: the customer support agent demo, proxied to the app on 127.0.0.1:8003.
+# Installed as /etc/nginx/sites-available/support.matheusramos.dev (see README, Deploy), so it
+# is included in the http context, where map and limit_req_zone have to be.
+
+# Per client IP limits. Behind the Cloudflare proxy every connection comes from a Cloudflare
+# edge, so the client is CF-Connecting-IP; only Cloudflare (and localhost/Tailscale, where the
+# header is absent) can reach nginx at all (conf.d/00-cloudflare-only.conf), so it can't be
+# forged. Not realip: it rewrites $remote_addr before the access phase, and the Cloudflare-only
+# allowlist would then deny every real client.
+map $http_cf_connecting_ip $support_client_ip {
+    ""      $remote_addr;
+    default $http_cf_connecting_ip;
+}
+
+# A chat turn costs LLM calls: a few per minute is plenty for a person.
+limit_req_zone $support_client_ip zone=support_chat:10m rate=12r/m;
+limit_req_zone $support_client_ip zone=support_api:10m rate=5r/s;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name support.matheusramos.dev;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name support.matheusramos.dev;
+
+    # Cloudflare Origin Certificate (Cloudflare SSL mode: Full (strict)).
+    ssl_certificate /etc/nginx/ssl/support.matheusramos.dev.pem;
+    ssl_certificate_key /etc/nginx/ssl/support.matheusramos.dev.key;
+
+    client_max_body_size 64k;
+    limit_req_status 429;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $support_client_ip;
+    proxy_set_header X-Forwarded-For $support_client_ip;
+    proxy_set_header X-Forwarded-Proto https;
+
+    location = /chat {
+        limit_req zone=support_chat burst=6 nodelay;
+        proxy_pass http://127.0.0.1:8003;
+        # A turn may wait on the LLM for minutes (LLM_TIMEOUT_SECONDS, plus retries).
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        limit_req zone=support_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:8003;
+    }
+}
