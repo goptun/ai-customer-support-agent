@@ -489,13 +489,18 @@ def _unaffirmed(reply: str, facts: Facts) -> list[list[str]]:
 
 
 # The checks an LLM reply must pass to be used instead of the facts.
-Check = Literal["empty", "grounded", "complete"]
+Check = Literal["empty", "markup", "grounded", "complete"]
+
+# A model's chat-template tokens leaking into its reply: a degenerate answer that may loop
+# on its own channels, whatever it states (#60).
+_CHAT_TEMPLATE_MARKUP = re.compile(r"<\|(?:start|end|channel|message|return)\|>")
 
 
 class FallbackReason(BaseModel):
     """Why an LLM reply was discarded in favour of the facts."""
 
     empty: bool = False
+    markup: bool = False  # chat-template tokens in the reply: the `markup` check
     ungrounded: list[str] = []  # stated beyond the facts: the `grounded` check
     unaffirmed: list[list[str]] = []  # required facts, as their wordings: the `complete` check
 
@@ -505,6 +510,7 @@ class FallbackReason(BaseModel):
         """The checks the reply failed."""
         failed: dict[Check, object] = {
             "empty": self.empty,
+            "markup": self.markup,
             "grounded": self.ungrounded,
             "complete": self.unaffirmed,
         }
@@ -515,6 +521,8 @@ def fallback_reason(reply: str, facts: Facts) -> FallbackReason | None:
     """Why the reply can't be used, or None if it is grounded and complete."""
     if not reply.strip():
         return FallbackReason(empty=True)
+    if _CHAT_TEMPLATE_MARKUP.search(reply):
+        return FallbackReason(markup=True)
     ungrounded, unaffirmed = _ungrounded(reply, facts), _unaffirmed(reply, facts)
     if ungrounded or unaffirmed:
         return FallbackReason(ungrounded=ungrounded, unaffirmed=unaffirmed)

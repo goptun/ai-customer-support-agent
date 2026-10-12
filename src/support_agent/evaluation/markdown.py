@@ -136,6 +136,7 @@ def _fallbacks(results: Sequence[ConversationResult]) -> list[str]:
             else:
                 failed = {
                     "empty": "empty reply",
+                    "markup": "chat-template markup",
                     "grounded": "grounded: " + "; ".join(reason.ungrounded),
                     "complete": "complete: "
                     + "; ".join(" | ".join(wordings) for wordings in reason.unaffirmed),
