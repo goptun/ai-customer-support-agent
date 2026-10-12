@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal, Self
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langchain_core.tracers.langchain import wait_for_all_tracers
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -31,6 +31,15 @@ from support_agent.decisions import (
 )
 from support_agent.graph import AgentDeps, RunContext, build_graph, run_turn
 from support_agent.knowledge import Embedder, FastEmbedEmbedder, KnowledgeBase
+from support_agent.limits import (
+    ConversationRateLimit,
+    Idempotency,
+    IdempotencyKeyInFlight,
+    IdempotencyKeyReused,
+    LLMBudget,
+    MeteredLLM,
+    RateLimited,
+)
 from support_agent.llm import LLM, build_llm
 from support_agent.logistics import LogisticsClient
 from support_agent.models import ApprovalStatus, Attendant, Customer, MessageRole
@@ -90,6 +99,23 @@ class DecisionBody(BaseModel):
         return self
 
 
+RATE_LIMITED_REPLY = (
+    "Você enviou muitas mensagens em pouco tempo nesta conversa. Aguarde um pouco e tente de novo."
+)
+LLM_CAP_REPLY = (
+    "O atendimento automático atingiu o limite diário de uso desta demonstração. "
+    "Tente de novo amanhã."
+)
+
+
+def _too_many_requests(detail: str, limited: RateLimited) -> HTTPException:
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        detail,
+        headers={"Retry-After": str(limited.retry_after_seconds)},
+    )
+
+
 def _today() -> date:
     return datetime.now(UTC).date()
 
@@ -128,6 +154,13 @@ def create_app(
                 ttl_seconds=settings.working_state_ttl_seconds,
                 window=settings.working_state_window,
             )
+            app.state.rate_limit = ConversationRateLimit(
+                redis,
+                turns=settings.chat_turns_per_window,
+                window_seconds=settings.chat_rate_window_seconds,
+            )
+            app.state.llm_budget = LLMBudget(redis, settings.llm_calls_per_day, today)
+            app.state.idempotency = Idempotency(redis, settings.idempotency_ttl_seconds)
             app.state.decisions = Decisions(
                 app.state.sessions, app.state.conversations, checkpointer
             )
@@ -159,7 +192,7 @@ def create_app(
             app.state.graph = build_graph(
                 checkpointer,
                 AgentDeps(
-                    llm=llm or build_llm(settings),
+                    llm=MeteredLLM(llm or build_llm(settings), app.state.llm_budget.count),
                     tools=tools,
                     history_window=settings.working_state_window,
                     retry=RetryPolicy(
@@ -225,18 +258,21 @@ def create_app(
             access_token=issue_token(principal, settings.jwt_secret, settings.jwt_ttl_seconds)
         )
 
-    @app.post("/chat")
-    async def chat(
-        body: ChatRequest,
-        request: Request,
-        customer: Annotated[Principal, Depends(current_customer)],
-    ) -> ChatResponse:
+    async def take_turn(body: ChatRequest, request: Request, customer: Principal) -> ChatResponse:
         conversations: Conversations = request.app.state.conversations
         graph: CompiledStateGraph[Any, RunContext] = request.app.state.graph
         try:
             conversation_id = await conversations.open(customer.subject, body.conversation_id)
         except ConversationNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from None
+        try:
+            await request.app.state.llm_budget.check()
+        except RateLimited as limited:
+            raise _too_many_requests(LLM_CAP_REPLY, limited) from None
+        try:
+            await request.app.state.rate_limit.take(conversation_id)
+        except RateLimited as limited:
+            raise _too_many_requests(RATE_LIMITED_REPLY, limited) from None
 
         decisions: Decisions = request.app.state.decisions
         notices = await decisions.surface_unseen(customer.subject, conversation_id)
@@ -251,6 +287,44 @@ def create_app(
             pending_actions=turn.pending_actions,
             notices=notices,
         )
+
+    @app.post("/chat")
+    async def chat(
+        body: ChatRequest,
+        request: Request,
+        customer: Annotated[Principal, Depends(current_customer)],
+        idempotency_key: Annotated[
+            str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+        ] = None,
+    ) -> ChatResponse:
+        if idempotency_key is None:
+            return await take_turn(body, request, customer)
+
+        # A retry with the same key (a timeout, a double submit) gets the original turn back.
+        idempotency: Idempotency = request.app.state.idempotency
+        fingerprint = body.model_dump(mode="json")
+        try:
+            replay = await idempotency.claim(customer.subject, idempotency_key, fingerprint)
+        except IdempotencyKeyReused:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Idempotency-Key already used for a different request",
+            ) from None
+        except IdempotencyKeyInFlight:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "A request with this Idempotency-Key is still running"
+            ) from None
+        if replay is not None:
+            return ChatResponse.model_validate(replay)
+        try:
+            response = await take_turn(body, request, customer)
+        except BaseException:
+            await idempotency.release(customer.subject, idempotency_key)
+            raise
+        await idempotency.settle(
+            customer.subject, idempotency_key, fingerprint, response.model_dump(mode="json")
+        )
+        return response
 
     @app.get("/conversations/{conversation_id}/messages")
     async def conversation_messages(

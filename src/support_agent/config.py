@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     refund_delivery_window_days: int = 30
     # ...or if the Shipment is more than this many days past its promised date.
     refund_late_after_days: int = 10
+    # Abuse protection for the public demo (per IP limits are in the nginx vhost).
+    chat_turns_per_window: int = 10  # per Conversation
+    chat_rate_window_seconds: int = 60
+    llm_calls_per_day: int = 2000  # across all Customers, UTC days
+    idempotency_ttl_seconds: int = 86400
 
     @property
     def checkpointer_url(self) -> str:
