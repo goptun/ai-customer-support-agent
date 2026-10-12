@@ -470,3 +470,22 @@ async def test_a_reply_that_fell_back_to_the_facts_records_the_llm_reply_and_why
     assert "> Chega em 25/12/2030." in markdown
     assert "grounded: 25/12/2030" in markdown
     assert "complete: 03/09/2026; BR100000002" in markdown
+
+
+async def test_a_reply_with_chat_template_markup_is_reported_as_such(
+    client: AsyncClient, llm: ScriptedLLM
+) -> None:
+    llm.on("[eval] reembolso do 1001", refund("1001"))
+    llm.on("[eval] cancela o 1002", cancel_order("1002"))
+    llm.on("[eval] quando chega o 1002?", order_status("1002"), reply=f"{LLM_WORDING}<|end|>")
+    llm.on("[eval] cadê o 1002?", order_status("1002"), reply=LLM_WORDING)
+
+    report = await evaluate(
+        client,
+        parse_dataset(ONLY_LLM_WORDING),
+        FlagsReplies("ORD-1002"),
+        models=MODELS,
+        started_at=STARTED_AT,
+    )
+
+    assert "`ungrounded_fallback` turn 1: chat-template markup" in render_markdown(report)
