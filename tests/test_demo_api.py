@@ -58,7 +58,7 @@ async def test_admission_creates_a_customer_with_the_templated_orders(
     assert statuses == ["delivered", "delivered", "processing", "shipped"]
     async with session_factory(engine)() as session:
         assert await session.get(Customer, claims["sub"]) is not None
-        assert await session.get(Attendant, claims["att"]) is not None
+        assert await session.get(Attendant, claims["attendant"]) is not None
 
 
 async def test_admission_is_refused_without_a_passing_turnstile_token(
@@ -77,7 +77,7 @@ async def test_each_visitor_gets_their_own_customer_orders_and_attendant(
     first, second = await admitted(client), await admitted(client)
 
     assert claims_of(first)["sub"] != claims_of(second)["sub"]
-    assert claims_of(first)["att"] != claims_of(second)["att"]
+    assert claims_of(first)["attendant"] != claims_of(second)["attendant"]
     first_orders = {o["order_id"] for o in first["orders"]}
     second_orders = {o["order_id"] for o in second["orders"]}
     assert first_orders.isdisjoint(second_orders)

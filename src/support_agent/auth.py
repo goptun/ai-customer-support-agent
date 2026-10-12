@@ -35,7 +35,7 @@ def issue_token(principal: Principal, secret: str, ttl_seconds: int) -> str:
         "exp": now + timedelta(seconds=ttl_seconds),
     }
     if principal.attendant_id is not None:
-        claims["att"] = principal.attendant_id
+        claims["attendant"] = principal.attendant_id
     return jwt.encode(claims, secret, algorithm=ALGORITHM)
 
 
@@ -45,7 +45,7 @@ def verify_token(token: str, secret: str) -> Principal:
             token, secret, algorithms=[ALGORITHM], options={"require": ["sub", "role", "exp"]}
         )
         return Principal(
-            subject=claims["sub"], role=Role(claims["role"]), attendant_id=claims.get("att")
+            subject=claims["sub"], role=Role(claims["role"]), attendant_id=claims.get("attendant")
         )
     except (jwt.PyJWTError, ValueError) as exc:
         raise InvalidToken from exc

@@ -84,7 +84,6 @@ class DemoVisitor:
     customer_id: str
     customer_name: str
     attendant_id: str
-    order_ids: list[str]
 
 
 class DemoVisitors:
@@ -101,16 +100,14 @@ class DemoVisitors:
         noon = datetime.combine(today, time(12), tzinfo=UTC)
         async with self._sessions.begin() as session:
             session.add_all([customer, attendant])
-            order_ids = []
             for template in TEMPLATE:
                 number: int = await session.scalar(DEMO_ORDER_NUMBERS.next_value())
                 order = _order(template, f"ORD-{number}", customer.id, noon)
                 session.add(order)
-                order_ids.append(order.id)
                 if template.dispatched is not None:
                     dispatched_at = noon + timedelta(days=template.dispatched)
                     session.add(_shipment(order, dispatched_at, number))
-        return DemoVisitor(customer.id, customer.name, attendant.id, order_ids)
+        return DemoVisitor(customer.id, customer.name, attendant.id)
 
 
 def _order(template: _Template, order_id: str, customer_id: str, noon: datetime) -> Order:

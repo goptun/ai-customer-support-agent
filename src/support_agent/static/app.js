@@ -30,13 +30,13 @@ const turnstileEl = document.getElementById('turnstile');
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const day = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
 
-let session = null; // { token, expiresAt, conversationId }
+let visitor = null; // { token, expiresAt, conversationId }
 let busy = false;
 let widgetId = null;
 let pendingNotice = null; // shown once the next admission succeeds
 
 // Per-viewer convenience only: the page works without storage.
-function loadSession() {
+function loadVisitor() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     if (stored && typeof stored.token === 'string' && stored.expiresAt > Date.now() + 60000) {
@@ -46,9 +46,9 @@ function loadSession() {
   return null;
 }
 
-function saveSession() {
+function saveVisitor() {
   try {
-    if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    if (visitor) localStorage.setItem(STORAGE_KEY, JSON.stringify(visitor));
     else localStorage.removeItem(STORAGE_KEY);
   } catch (_) { /* storage unavailable */ }
 }
@@ -139,26 +139,28 @@ function renderChips(orders) {
 
 function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
-  if (session) headers.Authorization = `Bearer ${session.token}`;
+  if (visitor) headers.Authorization = `Bearer ${visitor.token}`;
   if (options.body) headers['Content-Type'] = 'application/json';
   return fetch(path, { ...options, headers });
 }
 
+// Whether the visitor still has Orders: after a Demo Reset their Customer is gone.
 async function refreshOrders() {
   const response = await api('orders');
-  if (!response.ok) return response.status;
+  if (!response.ok) return false;
   const orders = await response.json();
+  if (orders.length === 0) return false;
   renderOrders(orders);
   renderChips(orders);
-  return 200;
+  return true;
 }
 
 async function restoreConversation() {
-  if (!session.conversationId) return;
-  const response = await api(`conversations/${session.conversationId}/messages`);
+  if (!visitor.conversationId) return;
+  const response = await api(`conversations/${visitor.conversationId}/messages`);
   if (!response.ok) {
-    session.conversationId = null;
-    saveSession();
+    visitor.conversationId = null;
+    saveVisitor();
     return;
   }
   const messages = await response.json();
@@ -223,15 +225,15 @@ async function onVerified(turnstileToken) {
     setStatus('Não foi possível iniciar a demo. Recarregue a página.', true);
     return;
   }
-  const visitor = await response.json();
-  session = {
-    token: visitor.access_token,
-    expiresAt: Date.now() + visitor.expires_in * 1000,
+  const admitted = await response.json();
+  visitor = {
+    token: admitted.access_token,
+    expiresAt: Date.now() + admitted.expires_in * 1000,
     conversationId: null,
   };
-  saveSession();
-  renderOrders(visitor.orders);
-  renderChips(visitor.orders);
+  saveVisitor();
+  renderOrders(admitted.orders);
+  renderChips(admitted.orders);
   resetConversation();
   if (pendingNotice) addMessage('notice', pendingNotice);
   pendingNotice = null;
@@ -240,14 +242,14 @@ async function onVerified(turnstileToken) {
 }
 
 async function startOver(notice) {
-  session = null;
-  saveSession();
+  visitor = null;
+  saveVisitor();
   await admit(notice);
 }
 
 async function send(text) {
   const message = text.trim();
-  if (!message || busy || !session) return;
+  if (!message || busy || !visitor) return;
   busy = true;
   setReady(false);
   setStatus('');
@@ -260,7 +262,7 @@ async function send(text) {
     const response = await api('chat', {
       method: 'POST',
       headers: { 'Idempotency-Key': crypto.randomUUID() },
-      body: JSON.stringify({ message, conversation_id: session.conversationId }),
+      body: JSON.stringify({ message, conversation_id: visitor.conversationId }),
     });
     typing.remove();
     if (response.status === 401) {
@@ -269,8 +271,8 @@ async function send(text) {
       return;
     }
     if (response.status === 404) {
-      session.conversationId = null;
-      saveSession();
+      visitor.conversationId = null;
+      saveVisitor();
       addMessage('error', 'Essa conversa não existe mais. Envie de novo para começar outra.');
       return;
     }
@@ -286,8 +288,8 @@ async function send(text) {
       return;
     }
     const turn = await response.json();
-    session.conversationId = turn.conversation_id;
-    saveSession();
+    visitor.conversationId = turn.conversation_id;
+    saveVisitor();
     turn.notices.forEach((notice) => addMessage('notice', notice));
     addMessage('agent', turn.reply);
     refreshOrders(); // a Cancellation changes an Order's status
@@ -296,7 +298,7 @@ async function send(text) {
     addMessage('error', 'Sem conexão com o servidor. Tente de novo.');
   } finally {
     busy = false;
-    if (session) setReady(true);
+    if (visitor) setReady(true);
   }
 }
 
@@ -313,27 +315,26 @@ messageEl.addEventListener('keydown', (event) => {
 });
 
 newConversationBtn.addEventListener('click', () => {
-  if (!session) return;
-  session.conversationId = null;
-  saveSession();
+  if (!visitor) return;
+  visitor.conversationId = null;
+  saveVisitor();
   resetConversation();
   messageEl.focus();
 });
 
 async function start() {
-  session = loadSession();
-  if (session) {
+  visitor = loadVisitor();
+  if (visitor) {
     setStatus('Retomando sua demo…');
-    const status = await refreshOrders().catch(() => 0);
-    if (status === 200) {
+    if (await refreshOrders().catch(() => false)) {
       resetConversation();
       await restoreConversation();
       setStatus('');
       setReady(true);
       return;
     }
-    session = null;
-    saveSession();
+    visitor = null;
+    saveVisitor();
   }
   await admit(null);
 }
