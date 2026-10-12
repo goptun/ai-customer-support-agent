@@ -1,0 +1,11 @@
+# Started by support-backup.timer. Install: README → Deploy → Backups.
+[Unit]
+Description=ai-customer-support-agent: Postgres dump to ~/ops/backups/support
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/ai-customer-support-agent
+ExecStart=/home/ubuntu/projects/ai-customer-support-agent/scripts/backup-postgres.sh

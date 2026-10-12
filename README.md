@@ -171,7 +171,16 @@ The JSON the classifier must return is asked for in the prompt and parsed lenien
 
 ### Tracing (LangSmith)
 
-Off unless set. Add to `.env` and restart the app:
+Off unless set, and always off under Compose: `compose.yaml` is the production project and forces `LANGSMITH_TRACING=false`, since traces carry Customer messages. To trace the containers on a dev machine, put the setting in an untracked `compose.override.yaml` (gitignored; Compose loads it automatically, so never create one on the VPS):
+
+```yaml
+services:
+  app:
+    environment:
+      LANGSMITH_TRACING: "true"
+```
+
+and the key and project in `.env`, then restart the app:
 
 ```sh
 LANGSMITH_TRACING=true
@@ -183,7 +192,7 @@ Each Customer message is one trace named `conversation_turn` (filter by `convers
 
 ### Abuse protection
 
-`POST /chat` answers `429` with a pt-BR `detail` and `Retry-After` when a Conversation sends more than `CONVERSATION_TURNS_PER_WINDOW` (10) turns in `CONVERSATION_RATE_WINDOW_SECONDS` (60), or when the LLM calls of the day (UTC, all Customers) reach `LLM_CALLS_PER_DAY` (2000); the last turn of the day may go a few calls over rather than stop halfway. Counters live in Redis.
+`POST /chat` answers `429` with a pt-BR `detail` and `Retry-After` when a Conversation sends more than `CONVERSATION_TURNS_PER_WINDOW` (10) turns in `CONVERSATION_RATE_WINDOW_SECONDS` (60), or when the LLM calls of the day (UTC, all Customers) reach `LLM_CALLS_PER_DAY` (2000 in the app, 300 under Compose, i.e. in production); the last turn of the day may go a few calls over rather than stop halfway. Counters live in Redis.
 
 An optional `Idempotency-Key` header makes a retry safe: the same key from the same Customer returns the original turn for `IDEMPOTENCY_TTL_SECONDS` (24 h) without running it again or counting it; the same key with a different body is `422`, and while the first request is still running (up to `IDEMPOTENCY_IN_FLIGHT_TTL_SECONDS`), `409`. A request that fails (including a `429`) frees its key for the retry.
 
@@ -196,6 +205,45 @@ Public at `https://support.matheusramos.dev`, on the VPS next to the other servi
 3. vhost: `sudo cp deploy/nginx/support.matheusramos.dev /etc/nginx/sites-available/`, `sudo ln -s /etc/nginx/sites-available/support.matheusramos.dev /etc/nginx/sites-enabled/`, `sudo nginx -t && sudo systemctl reload nginx`.
 4. App: `.env` from `.env.example` (strong `JWT_SECRET` and `POSTGRES_PASSWORD`, LLM provider), then `docker compose up -d --build` in this directory (Compose project `support`; touches no other project).
 5. Smoke test: the `curl` from [Run locally](#run-locally) against `https://support.matheusramos.dev`.
+6. Backups: install the timer (below).
+
+**Before any recreate** (`down`, `up --build`, `--force-recreate`, moving this directory): read this section, run `docker diff` on each `support-*` container and keep anything in it that isn't in the image, and run it here only, so Compose acts on the project `support` alone. The `support` project is the only one ever recreated from this repo: never `docker compose` another project's file, `docker system prune` or touch rag_api, fraud, newsletter or 9router containers. `scripts/go-live.sh` checks at the end that no other container changed.
+
+#### Resource limits
+
+The VPS has 2 vCPUs, ~11.6 GiB of RAM and no swap, and the services already there use about 3.5 GiB (rag_api ~1 GiB, fraud's Kafka ~0.5 GiB, the rest ~100 MiB each). An OOM without swap kills whatever the kernel picks, so every `support` service has a hard `mem_limit` and the project as a whole stays under ~1.9 GiB:
+
+| Service | `mem_limit` | `cpus` | Measured (peak) | Why |
+| --- | --- | --- | --- | --- |
+| app | 1280m | 1.0 | ~800 MiB (870 MiB) | fastembed model in memory plus the LangGraph runtime; ~45% headroom over the peak at start-up indexing. One vCPU leaves the other to everything else. |
+| postgres | 384m | 0.5 | ~90 MiB (110 MiB) | Default `shared_buffers` (128 MB) plus a few connections; the data set is small. |
+| redis | 64m | 0.25 | ~6 MiB | Counters, Working State and idempotency keys, all with a TTL; `maxmemory 48mb` with `volatile-ttl` evicts before the container limit is reached. |
+| logistics | 128m | 0.25 | ~40 MiB | A single uvicorn worker. |
+
+`cpus` caps a burst (the app embedding the Knowledge Base, a slow LLM turn) so it can't starve rag_api or fraud; at idle nothing is used. Measure again with `docker stats --no-stream` after a change that adds memory (a bigger embedding model, more workers).
+
+Every service has `restart: unless-stopped` and a healthcheck (`/health` on the app and the mock, `pg_isready`, `redis-cli ping`); `docker compose ps` shows `healthy`. Only the app publishes a port, on `127.0.0.1:8003`.
+
+#### Backups
+
+`scripts/backup-postgres.sh` writes a `pg_dump` (custom format) of the `support` database to `~/ops/backups/support/support-<UTC timestamp>.dump`, checks that `pg_restore` can read it and keeps the newest 14 (`KEEP`). The credentials never leave the container. A systemd timer runs it daily at 04:30 (São Paulo):
+
+```sh
+sudo cp deploy/systemd/support-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now support-backup.timer
+sudo systemctl start support-backup.service && journalctl -u support-backup.service -n 5  # first run
+```
+
+Restore (the app is stopped so nothing writes during it; `--clean` drops and recreates every object):
+
+```sh
+docker compose stop app
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
+  < ~/ops/backups/support/support-<timestamp>.dump
+docker compose start app
+```
+
+To check a dump without touching the live database, restore it into a throwaway one: `createdb -U "$POSTGRES_USER" restore_check` in the container, the same `pg_restore` with `-d restore_check`, then `dropdb`. Redis needs no backup: it only caches what Postgres rebuilds (ADR-0001).
 
 The vhost limits requests per client IP (`limit_req`: `/chat` 12/min with a burst of 6, the rest 5/s), answering `429`. Behind Cloudflare the client is `CF-Connecting-IP`, used as the `limit_req` key and passed on as `X-Real-IP`. It is not set with `real_ip_header`: realip would rewrite the address before nginx checks `conf.d/00-cloudflare-only.conf` (the allowlist that lets only Cloudflare in), and every real client would be denied. Cloudflare overwrites the header, and the allowlist leaves only private/Tailscale networks able to forge it.
 
