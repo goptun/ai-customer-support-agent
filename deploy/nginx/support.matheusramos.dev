@@ -1,26 +1,14 @@
-# support.matheusramos.dev: the customer support agent demo, proxied to the app on 127.0.0.1:8003.
-# Installed as /etc/nginx/sites-available/support.matheusramos.dev (see docs/deploy.md), so it
-# is included in the http context, where map and limit_req_zone have to be.
-
-# Per client IP limits. Behind the Cloudflare proxy every connection comes from a Cloudflare
-# edge, so the client is CF-Connecting-IP, which Cloudflare overwrites. Only Cloudflare and
-# private networks can reach nginx at all (conf.d/00-cloudflare-only.conf), so only
-# a trusted network could forge it; without the header the key is the peer address. Not realip: it rewrites $remote_addr before the access phase, and the Cloudflare-only
-# allowlist would then deny every real client.
-map $http_cf_connecting_ip $support_client_ip {
-    ""      $remote_addr;
-    default $http_cf_connecting_ip;
-}
-
-# A chat turn costs LLM calls: a few per minute is plenty for a person.
-limit_req_zone $support_client_ip zone=support_chat:10m rate=12r/m;
-limit_req_zone $support_client_ip zone=support_api:10m rate=5r/s;
+# support.matheusramos.dev: the demo's old address. It now lives at
+# https://matheusramos.dev/projects/support/ (support-location.conf in the main vhost), and this
+# vhost only answers 301 there, keeping the path so old links to /docs and the like still land.
+# Installed as /etc/nginx/sites-available/support.matheusramos.dev (see docs/deploy.md). The DNS
+# record and the Origin Certificate stay: the redirect needs TLS on this name.
 
 server {
     listen 80;
     listen [::]:80;
     server_name support.matheusramos.dev;
-    return 301 https://$host$request_uri;
+    return 301 https://matheusramos.dev/projects/support$request_uri;
 }
 
 server {
@@ -32,23 +20,5 @@ server {
     ssl_certificate /etc/nginx/ssl/support.matheusramos.dev.pem;
     ssl_certificate_key /etc/nginx/ssl/support.matheusramos.dev.key;
 
-    client_max_body_size 64k;
-    limit_req_status 429;
-
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $support_client_ip;
-    proxy_set_header X-Forwarded-For $support_client_ip;
-    proxy_set_header X-Forwarded-Proto https;
-
-    location = /chat {
-        limit_req zone=support_chat burst=6 nodelay;
-        proxy_pass http://127.0.0.1:8003;
-        # A turn may wait on the LLM for minutes (LLM_TIMEOUT_SECONDS, plus retries).
-        proxy_read_timeout 300s;
-    }
-
-    location / {
-        limit_req zone=support_api burst=20 nodelay;
-        proxy_pass http://127.0.0.1:8003;
-    }
+    return 301 https://matheusramos.dev/projects/support$request_uri;
 }
