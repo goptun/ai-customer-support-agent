@@ -73,26 +73,35 @@ class Decisions:
         self._conversations = conversations
         self.workflow = ApprovalWorkflow(build_approval_graph(checkpointer, self.settle))
 
-    async def in_status(self, status: ApprovalStatus) -> list[ApprovalRequestView]:
-        """Approval Requests in that status, oldest first."""
+    async def in_status(
+        self, status: ApprovalStatus, customer_id: str | None = None
+    ) -> list[ApprovalRequestView]:
+        """Approval Requests in that status, oldest first; only that Customer's, if given."""
+        query = _with_refund().where(ApprovalRequest.status == status)
+        if customer_id is not None:
+            query = query.where(ApprovalRequest.customer_id == customer_id)
         async with self._sessions() as session:
             rows = (
                 await session.execute(
-                    _with_refund()
-                    .where(ApprovalRequest.status == status)
-                    .order_by(ApprovalRequest.created_at, ApprovalRequest.id)
+                    query.order_by(ApprovalRequest.created_at, ApprovalRequest.id)
                 )
             ).all()
         return [_view(approval, refund) for approval, refund in rows]
 
     async def decide(
-        self, approval_request_id: uuid.UUID, decision: ApprovalDecision
+        self,
+        approval_request_id: uuid.UUID,
+        decision: ApprovalDecision,
+        customer_id: str | None = None,
     ) -> ApprovalRequestView:
-        """Record the decision and resume the paused workflow, which settles it."""
+        """Record the decision and resume the paused workflow, which settles it.
+
+        Given a Customer, another Customer's request is as good as missing.
+        """
         async with self._sessions.begin() as session:
             # The row lock serialises concurrent decisions: the second one sees the first.
             approval = await session.get(ApprovalRequest, approval_request_id, with_for_update=True)
-            if approval is None:
+            if approval is None or customer_id not in (None, approval.customer_id):
                 raise ApprovalRequestNotFound
             if approval.status is not ApprovalStatus.PENDING:
                 raise AlreadyDecided

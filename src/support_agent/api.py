@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from support_agent.approvals import ApprovalDecision
 from support_agent.auth import (
+    AttendantScope,
     ExpiredToken,
     InvalidToken,
     Principal,
@@ -57,7 +58,7 @@ from support_agent.logistics import LogisticsClient
 from support_agent.models import ApprovalStatus, Attendant, Customer, MessageRole
 from support_agent.orders import Orders, OrderView
 from support_agent.refunds import RefundPolicy, Refunds
-from support_agent.tickets import Tickets
+from support_agent.tickets import Tickets, TicketView
 from support_agent.tools import RetryPolicy, ToolDeps
 
 
@@ -230,6 +231,7 @@ def create_app(
                 settings.idempotency_ttl_seconds,
                 settings.idempotency_in_flight_ttl_seconds,
             )
+            app.state.tickets = Tickets(app.state.sessions)
             app.state.decisions = Decisions(
                 app.state.sessions, app.state.conversations, checkpointer
             )
@@ -238,7 +240,7 @@ def create_app(
                 logistics=LogisticsClient(
                     logistics_http, timeout_seconds=settings.logistics_timeout_seconds
                 ),
-                tickets=Tickets(app.state.sessions),
+                tickets=app.state.tickets,
                 cancellations=Cancellations(app.state.sessions),
                 refunds=Refunds(
                     app.state.sessions,
@@ -291,7 +293,9 @@ def create_app(
             {"detail": exc.detail, "code": exc.signal}, exc.status_code, headers=exc.headers
         )
 
-    def authenticated(role: Role) -> Callable[..., Awaitable[Principal]]:
+    def authenticated(
+        role: Role, *, or_demo_visitor: bool = False
+    ) -> Callable[..., Awaitable[Principal]]:
         async def principal(
             request: Request,
             credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
@@ -315,7 +319,7 @@ def create_app(
                 raise (restart if expired.principal.is_demo_visitor else unauthorized) from None
             except InvalidToken:
                 raise unauthorized from None
-            if found.role is not role:
+            if found.role is not role and not (or_demo_visitor and found.is_demo_visitor):
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN, f"{role.capitalize()} token required"
                 )
@@ -327,7 +331,8 @@ def create_app(
         return principal
 
     current_customer = authenticated(Role.CUSTOMER)
-    current_attendant = authenticated(Role.ATTENDANT)
+    # A Demo Visitor acts as their paired Attendant, over their own Customer only (ADR-0005).
+    current_attendant = authenticated(Role.ATTENDANT, or_demo_visitor=True)
 
     @app.post("/auth/dev-token", include_in_schema=settings.dev_token_enabled)
     async def dev_token(body: DevTokenRequest, request: Request) -> TokenResponse:
@@ -484,13 +489,13 @@ def create_app(
     @app.get("/approvals")
     async def list_approvals(
         request: Request,
-        _: Annotated[Principal, Depends(current_attendant)],
+        attendant: Annotated[Principal, Depends(current_attendant)],
         approval_status: Annotated[ApprovalStatus, Query(alias="status")] = (
             ApprovalStatus.PENDING
         ),
     ) -> list[ApprovalRequestView]:
         decisions: Decisions = request.app.state.decisions
-        return await decisions.in_status(approval_status)
+        return await decisions.in_status(approval_status, AttendantScope.of(attendant).customer_id)
 
     @app.post("/approvals/{approval_request_id}")
     async def decide_approval_request(
@@ -500,14 +505,16 @@ def create_app(
         attendant: Annotated[Principal, Depends(current_attendant)],
     ) -> ApprovalRequestView:
         decisions: Decisions = request.app.state.decisions
+        scope = AttendantScope.of(attendant)
         try:
             return await decisions.decide(
                 approval_request_id,
                 ApprovalDecision(
                     approved=body.decision == "approve",
-                    attendant_id=attendant.subject,
+                    attendant_id=scope.attendant_id,
                     reason=body.reason,
                 ),
+                scope.customer_id,
             )
         except ApprovalRequestNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Approval Request not found") from None
@@ -515,6 +522,13 @@ def create_app(
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "Approval Request already decided"
             ) from None
+
+    @app.get("/tickets")
+    async def list_tickets(
+        request: Request, attendant: Annotated[Principal, Depends(current_attendant)]
+    ) -> list[TicketView]:
+        tickets: Tickets = request.app.state.tickets
+        return await tickets.listed(AttendantScope.of(attendant).customer_id)
 
     # Last, so the API routes take precedence: the demo page and its assets.
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")
