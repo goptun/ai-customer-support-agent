@@ -436,8 +436,8 @@ _STATUS_WORDS = re.compile(
     re.IGNORECASE,
 )
 # A negation at most two words before a status, in the same clause, denies it: "ainda não foi
-# enviado" (#59).
-_NEGATED = re.compile(r"\b(?:não|nunca|nem)(?:\s+[^\s.,;:!?]+){0,2}\s+$")
+# enviado" (#59). A line break ends the clause, as in a list without punctuation (#66).
+_NEGATED = re.compile(r"\b(?:não|nunca|nem)(?:[^\S\n]+[^\s.,;:!?]+){0,2}[^\S\n]+$")
 
 
 def _ungrounded(reply: str, facts: Facts) -> list[str]:
@@ -465,8 +465,8 @@ def _ungrounded(reply: str, facts: Facts) -> list[str]:
 # A required wording is contradicted by a negation anywhere earlier in its clause: "não sei se
 # foi extraviado", "não é problema da transportadora". It leans towards rejecting, since the
 # facts are always a correct fallback: "Não consegui consultar a transportadora" falls back
-# too (#52).
-_NEGATED_IN_CLAUSE = re.compile(r"\b(?:não|nunca|nem)\b[^.,;:!?]*$")
+# too (#52). A line break ends the clause, as in a list without punctuation (#66).
+_NEGATED_IN_CLAUSE = re.compile(r"\b(?:não|nunca|nem)\b[^.,;:!?\n]*$")
 
 
 def _affirms(folded_reply: str, wording: str) -> bool:

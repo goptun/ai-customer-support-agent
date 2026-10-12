@@ -84,6 +84,22 @@ def test_a_status_named_only_to_deny_it_is_not_stated() -> None:
     assert fallback_reason(reply, facts) is None
 
 
+def test_a_negation_does_not_deny_a_status_on_the_next_line() -> None:
+    reply = "Rastreio BR100000002, previsão 03/09/2026.\n- Não atrasou\n- Entregue"
+
+    assert fallback_reason(reply, FACTS) == FallbackReason(ungrounded=["Entregue"])
+
+
+def test_a_negation_does_not_contradict_a_wording_on_the_next_line() -> None:
+    facts = Facts(
+        text="Pedido ORD-1004: enviado.\nSituação na transportadora: extraviado.",
+        statuses=frozenset({"enviado", "extraviado"}),
+        required=frozenset({frozenset({"extraviad", "extravio"})}),
+    )
+
+    assert fallback_reason("- Não houve atraso\n- Seu pedido foi extraviado", facts) is None
+
+
 @pytest.mark.parametrize(
     ("reply", "unaffirmed"),
     [
