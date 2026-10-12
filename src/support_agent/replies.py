@@ -493,7 +493,7 @@ Check = Literal["empty", "markup", "grounded", "complete"]
 
 # A model's chat-template tokens leaking into its reply: a degenerate answer that may loop
 # on its own channels, whatever it states (#60).
-_CHAT_TEMPLATE_MARKUP = re.compile(r"<\|(?:start|end|channel|message|return)\|>")
+_CHAT_TEMPLATE_MARKUP = re.compile(r"<\|[a-z_]+\|>")
 
 
 class FallbackReason(BaseModel):

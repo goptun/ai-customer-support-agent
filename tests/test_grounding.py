@@ -1,5 +1,7 @@
 """Why an LLM reply is discarded for the facts: the grounded and complete checks."""
 
+import pytest
+
 from support_agent.replies import Facts, FallbackReason, fallback_reason, grounded_reply
 
 FACTS = Facts(
@@ -56,12 +58,16 @@ def test_an_empty_reply_falls_back() -> None:
     assert reason.checks == ["empty"]
 
 
-def test_a_reply_with_chat_template_markup_falls_back() -> None:
-    reply = (
+@pytest.mark.parametrize(
+    "reply",
+    [
         "analysis: The order is pending payment.<|end|><|start|>assistantfinal:"
-        "Olá! Seu pedido aguarda pagamento.<|end|>"
-    )
-
+        "Olá! Seu pedido aguarda pagamento.<|end|>",
+        "<|im_start|>assistant\nSeu pedido aguarda pagamento.<|im_end|>",
+        "Seu pedido aguarda pagamento.<|eot_id|>",
+    ],
+)
+def test_a_reply_with_chat_template_markup_falls_back(reply: str) -> None:
     reason = fallback_reason(reply, Facts(text="Pedido ORD-1004: aguardando pagamento."))
 
     assert reason == FallbackReason(markup=True)
