@@ -26,6 +26,22 @@ class Principal:
         return self.attendant_id is not None
 
 
+@dataclass(frozen=True)
+class AttendantScope:
+    """Who decides, and over whose Approval Requests and Tickets."""
+
+    attendant_id: str
+    # A Demo Visitor's paired Attendant reaches only that Customer's; a real one, every one.
+    customer_id: str | None
+
+    @classmethod
+    def of(cls, principal: Principal) -> "AttendantScope":
+        if principal.attendant_id is not None:
+            return cls(attendant_id=principal.attendant_id, customer_id=principal.subject)
+        assert principal.role is Role.ATTENDANT
+        return cls(attendant_id=principal.subject, customer_id=None)
+
+
 class InvalidToken(Exception):
     pass
 

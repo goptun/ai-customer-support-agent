@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -21,6 +22,19 @@ class TicketResult(BaseModel):
     order_id: str | None
 
 
+class TicketView(BaseModel):
+    """A Ticket as the Attendant sees it."""
+
+    ticket_id: int
+    conversation_id: uuid.UUID
+    customer_id: str
+    order_id: str | None
+    reason: TicketReason
+    priority: TicketPriority
+    summary: str
+    created_at: datetime
+
+
 def idempotency_key(conversation_id: uuid.UUID, reason: TicketReason) -> str:
     return f"ticket:{conversation_id}:{reason.value}"
 
@@ -38,6 +52,27 @@ class NewTicket:
 class Tickets:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
+
+    async def listed(self, customer_id: str | None = None) -> list[TicketView]:
+        """Tickets, newest first; only that Customer's, if given."""
+        query = select(Ticket).order_by(Ticket.created_at.desc(), Ticket.id.desc())
+        if customer_id is not None:
+            query = query.where(Ticket.customer_id == customer_id)
+        async with self._sessions() as session:
+            tickets = (await session.scalars(query)).all()
+        return [
+            TicketView(
+                ticket_id=t.id,
+                conversation_id=t.conversation_id,
+                customer_id=t.customer_id,
+                order_id=t.order_id,
+                reason=t.reason,
+                priority=t.priority,
+                summary=t.summary,
+                created_at=t.created_at,
+            )
+            for t in tickets
+        ]
 
     async def conversation_owner(self, conversation_id: uuid.UUID) -> str | None:
         async with self._sessions() as session:
